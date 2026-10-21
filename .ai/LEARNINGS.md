@@ -188,3 +188,13 @@ Context: iterating on `Jenkinsfile` / `examples/*` while the jobs clone `/opt/de
 Evidence: a fix to the root `Jenkinsfile` had no effect on builds until the image was rebuilt and the container recreated.
 Pattern / rule: expect a rebuild (`docker compose build && up -d`) after any edit under `Jenkinsfile`, `examples/`, `casc/jobs.yaml`, `casc/jenkins.yaml.example`, `casc/pipelines/`, or `docker-compose.yml`, because those are copied into the snapshot.
 Promotion: none
+
+### L-018 — CasC creates and updates jobs but does not delete the ones it dropped
+Date: 2026-10-21
+Status: promoted
+Confidence: observed
+Scope: `casc/jobs.yaml`
+Context: syntax test — two jobs (`zz-syntax-test`, `zz-syntax-test2`) were added to `casc/jobs.yaml`, applied by a CasC reload, then removed from the file and the CasC reloaded again.
+Evidence: after the second reload both jobs were still present (`make jobs` listed 11); only `POST /job/<name>/doDelete` removed them. No error in the log.
+Pattern / rule: removing a job block from `casc/jobs.yaml` does not delete the job. Delete it explicitly (UI or `doDelete`) or it stays as untracked state that no longer matches the repository. The same applies to jobs created by hand in the UI.
+Promotion: CONVENTIONS.md
