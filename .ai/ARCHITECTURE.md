@@ -1,0 +1,138 @@
+# Architecture
+
+## Overview
+
+A single, cloud-agnostic Jenkins controller, built as a Docker image and run by Compose.
+It is the project's default local/on-prem baseline: the image carries Jenkins, Terraform,
+and the AWS CLI, while credentials and jobs come from CasC, so the same controller can run
+pipelines against AWS, Azure, GCP, or on-prem targets. Today it executes the
+`aws-waf-security` Terraform pipeline plus three per-cloud role examples. It is a local
+baseline: the controller builds on itself and there are no remote agents.
+
+```text
+docker compose up -d --build
+        │
+        ├── image jenkins-base:1.0
+        │     FROM jenkins/jenkins:lts-jdk17
+        │     + terraform <pinned ARG>  + awscli v2 + jq, git, python3, curl, unzip
+        │     + plugins.txt (configuration-as-code, job-dsl, workflow-*, git,
+        │                    credentials-binding, timestamper, ansicolor,
+        │                    pipeline-stage-view, matrix-auth)
+        │
+        └── container jenkins-base  (127.0.0.1:8081 → 8080, 50000 → 50000)
+              ├── /var/jenkins_home            named volume `jenkins_home`
+              ├── /var/jenkins_home/.aws       ${HOME}/.aws (read-only)
+              ├── /opt/casc                    ./casc (read-only)
+              └── /var/jenkins_home/init.groovy.d  ./init (read-only)
+                  │
+                  ├── CasC: casc/jenkins.yaml  (jenkins: + credentials:)
+                  │     ├── securityRealm: local users (admin)
+                  │     ├── authorization: loggedInUsersCanDoAnything
+                  │     └── credentials: waf-deploy-role-arn, aws-demo-role-arn,
+                  │                      azure-demo-oidc-token, gcp-demo-oidc-token
+                  │
+                  └── CasC: casc/jobs.yaml  (jobs:)
+                        ├── aws-waf-security (multibranch, git, main, Jenkinsfile)
+                        ├── example-aws-role     → casc/pipelines/example-aws-role.groovy
+                        ├── example-azure-role   → casc/pipelines/example-azure-role.groovy
+                        └── example-gcp-role     → casc/pipelines/example-gcp-role.groovy
+```
+
+Both CasC files are listed in `CASC_JENKINS_CONFIG` and must stay supplementary:
+each top-level key belongs to exactly one file, otherwise CasC raises a conflict.
+
+## Components
+
+| Component | File | Responsibility |
+| --- | --- | --- |
+| Image | `Dockerfile` | Jenkins LTS (pinned by digest) + pinned Debian packages + Terraform, AWS/Azure/GCP/OCI CLIs, kubectl, helm; disables the setup wizard; sets `CASC_JENKINS_CONFIG` |
+| Plugins | `plugins.txt` | Fully resolved, pinned plugin set installed by `jenkins-plugin-cli` |
+| Runtime | `docker-compose.yml` | Port mapping (loopback only), volumes, `TZ`, `restart: unless-stopped` |
+| Configuration as Code | `casc/jenkins.yaml` | Security realm, authorization, credentials |
+| CasC template | `casc/jenkins.yaml.example` | Committed, secret-free template |
+| Job definitions | `casc/jobs.yaml` | All jobs; versioned, no secrets; loads pipeline bodies from disk |
+| Pipelines | `casc/pipelines/*.groovy` | One inline pipeline per example job (AWS, Azure, GCP role assumption) |
+| Init script | `init/01-terraform-label.groovy` | Labels controller `terraform`, sets 2 executors |
+| Docs | `README.md` | Prerequisites, run/build instructions, parameters, examples, security notes |
+
+## Pinned toolchain
+
+The image is reproducible: the base is pinned by digest, every downloaded artifact
+by version **and** SHA256 (`sha256sum -c` runs before install), Debian packages by
+exact `name=version`, and Jenkins plugins by a fully resolved `name:version` list.
+
+| Tool | Version | Placement |
+| --- | --- | --- |
+| Terraform | 1.16.1 | `/usr/local/bin/terraform` |
+| AWS CLI v2 | 2.38.4 | `/usr/local/aws-cli` (symlinked in `/usr/local/bin`) |
+| kubectl | v1.37.1 | `/usr/local/bin/kubectl` |
+| helm | v4.3.1 | `/usr/local/bin/helm` |
+| Google Cloud CLI | 590.0.0 | `/opt/google-cloud-sdk/bin` (on `PATH`) |
+| Azure CLI | 2.91.0 | venv `/opt/azure-cli`, symlink `/usr/local/bin/az` |
+| OCI CLI | 3.95.1 | venv `/opt/oci-cli`, symlink `/usr/local/bin/oci` |
+| Python | 3.13.5 | Debian package (system) |
+
+Notes:
+
+- `az` and `oci` are Python applications, so each lives in its own venv: their
+  dependency trees cannot break the system Python that Jenkins itself uses.
+- pip is not upgraded inside those venvs; it comes from the pinned
+  `python3-venv` package, so the installer itself does not float.
+- The image is deliberately large (multi-GB). Splitting per-cloud derived images
+  is the documented escape hatch, not a requirement.
+
+## Identity, secrets, and access
+
+- **Observed:** no AWS access keys stored in Jenkins. The operator's `~/.aws` is mounted
+  read-only into `JENKINS_HOME`, and the pipeline assumes the deployment role through
+  STS (credential `waf-deploy-role-arn` holds the ARN string).
+- **Observed (offline SCM):** the example jobs clone `/opt/demo/repo.git`, a snapshot of
+  this project's Jenkinsfiles baked into the image with branches `main` and `feature/demo`.
+  Cloning a local path needs `-Dhudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true`, which
+  is a demo-only trade: it lets any job clone any local path. Multibranch children are
+  stored under `$JENKINS_HOME/jobs/<job>/branches/`, not `jobs/`.
+- **Observed:** the admin password lives in `casc/jenkins.yaml`, which is git-ignored and
+  replaced from `.example` at setup.
+- **Observed (example jobs):** each cloud uses a different short-lived mechanism —
+  AWS `sts:AssumeRole`, Azure Entra ID federated credential (OIDC → ARM token), GCP
+  Workload Identity Federation (OIDC → federated token → service account impersonation).
+  Tokens are supplied through secret-text credentials (`azure-demo-oidc-token`,
+  `gcp-demo-oidc-token`) because this local controller has no workload-identity platform
+  to inject them; the SECRETS are never echoed, and the exchanged credentials live only
+  inside a single `sh` step. Note: a secret-text credential exposes the token to anyone
+  with job configure rights — acceptable for a demo, not a production pattern.
+- **Observed:** ports bind to `127.0.0.1`; the controller is not reachable from the LAN.
+- **Observed:** authorization is `loggedInUsersCanDoAnything`; anyone who logs in is admin.
+- **Inferred:** suitable only for a single-operator demo machine; the lenient
+  authorization and build-on-controller model are the main production gaps.
+
+## Environments and deployment
+
+- One environment: the operator's machine. No staging, no production, no IaC for the
+  host, no CI/CD for this repository itself.
+- Volume state lives in the named volume `<project>_jenkins_home` (`jenkins-base_jenkins_home`
+  with the pinned Compose `name:`); `docker compose down -v` destroys it.
+- The Terraform state the *pipeline* uses lives in the target repository's remote
+  backend (`TF_STATE_BUCKET`), not here.
+
+## External dependencies
+
+- `github.com/crilsen/aws-waf-security` — the pipeline source, parameters, and
+  IAM requirements (`docs/iam/`).
+- Public downloads at image build: `awscli.amazonaws.com` and
+  `releases.hashicorp.com` (Terraform archive is pinned by version).
+- AWS account: the deployment role must pre-exist and be assumable by the local identity.
+
+## Context-layer layout
+
+```text
+Tool-specific adapter (optional)
+            ↓
+        AGENTS.md
+            ↓
+          .ai/
+  project · architecture · conventions · decisions
+  tasks · handoff · tools · validation · workflows · prompts
+```
+
+`.ai/` is the portable source of truth. Tool-specific adapters must only route agents to it.

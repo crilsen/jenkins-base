@@ -1,0 +1,10 @@
+# Never send the live CasC file to the build daemon: it holds the admin password
+# and the real role ARN. The Dockerfile copies the files it needs explicitly.
+casc/jenkins.yaml
+
+# Local state that must not leak into the image.
+.git
+.ai
+examples/terraform/.terraform
+examples/terraform/.terraform.lock.hcl
+*.log

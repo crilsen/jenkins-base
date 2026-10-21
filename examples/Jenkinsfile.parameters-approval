@@ -1,0 +1,59 @@
+// Parameters + manual approval + a guarded apply, without touching any cloud.
+// Mirrors the Validate -> Plan -> Approval -> Apply shape of a real Terraform
+// pipeline so the flow can be studied in the console.
+
+pipeline {
+  agent { label 'terraform' }
+  options { timestamps() }
+
+  parameters {
+    choice(name: 'TARGET', choices: ['dev', 'staging', 'prod'],
+           description: 'Environment the run pretends to target.')
+    string(name: 'CHANGE_ID', defaultValue: '', description: 'Ticket or PR id, for the log.')
+    booleanParam(name: 'REQUIRE_APPROVAL', defaultValue: true,
+                 description: 'Pause before Apply.')
+  }
+
+  stages {
+    stage('Validate') {
+      steps {
+        sh '''#!/bin/sh
+set -eu
+: "${CHANGE_ID:?set the CHANGE_ID parameter so the run is traceable}"
+echo "validating for TARGET=${TARGET} (change ${CHANGE_ID})"
+'''
+      }
+    }
+
+    stage('Plan') {
+      steps {
+        sh '''#!/bin/sh
+set -eu
+echo "plan for ${TARGET}: 0 to add, 0 to change, 0 to destroy (simulated)"
+'''
+      }
+    }
+
+    stage('Approval') {
+      when { expression { params.REQUIRE_APPROVAL } }
+      steps {
+        input message: "Apply to ${params.TARGET}?", submitter: 'admin', ok: 'Apply'
+      }
+    }
+
+    stage('Apply') {
+      steps {
+        sh '''#!/bin/sh
+set -eu
+echo "applying to ${TARGET} (simulated, nothing was created)"
+'''
+      }
+    }
+  }
+
+  post {
+    always {
+      echo "Finished for ${params.TARGET}: ${currentBuild.currentResult}"
+    }
+  }
+}

@@ -1,0 +1,186 @@
+# Job definitions for the local controller.
+#
+# Kept separate from casc/jenkins.yaml so job definitions are versioned while the
+# security realm and the secret-bearing credential values are not.
+#
+# Both files are loaded by CASC_JENKINS_CONFIG. They must stay supplementary:
+# this file owns `jobs:`, jenkins.yaml owns `jenkins:` and `credentials:`.
+# Do not define the same top-level key in both, or CasC raises a conflict.
+#
+# Pipeline bodies live in casc/pipelines/ (mounted at /opt/casc/pipelines).
+
+jobs:
+  - script: |
+      // Resolve the mounted pipeline directory. Override with CASC_PIPELINES_DIR
+      // when running outside the compose setup.
+      def pipelinesDir = System.getenv('CASC_PIPELINES_DIR') ?: '/opt/casc/pipelines'
+
+      def pipelineScript = { String fileName ->
+        def file = new File(pipelinesDir, fileName)
+        if (!file.isFile()) {
+          throw new IllegalStateException(
+            'Pipeline script not found: ' + file + '. ' +
+            'Mount casc/pipelines and point CASC_PIPELINES_DIR at it.')
+        }
+        return file.text
+      }
+
+      // The original job: Validate -> Plan -> Approval -> Apply for the WAFv2
+      // project, driven by the Jenkinsfile in the target repository.
+      multibranchPipelineJob('aws-waf-security') {
+        description('Validate -> Plan -> Approval -> Apply for the WAFv2 project')
+        branchSources {
+          git {
+            id('aws-waf-security-git')
+            remote('https://github.com/crilsen/aws-waf-security.git')
+            includes('main')
+          }
+        }
+        factory {
+          workflowBranchProjectFactory {
+            scriptPath('Jenkinsfile')
+          }
+        }
+        orphanedItemStrategy {
+          discardOldItems { numToKeep(10) }
+        }
+      }
+
+      // ---------------------------------------------------------------------
+      // Example jobs: one per cloud, each showing role assumption through
+      // short-lived federation instead of static credentials.
+      // See README.md -> "Example jobs: role in each cloud".
+      // ---------------------------------------------------------------------
+
+      pipelineJob('example-aws-role') {
+        description('Example: assume an IAM role with STS (credential aws-demo-role-arn). No static keys.')
+        definition {
+          cps {
+            script(pipelineScript('example-aws-role.groovy'))
+            sandbox()
+          }
+        }
+      }
+
+      pipelineJob('example-azure-role') {
+        description('Example: Entra ID federated credential exchange (credential azure-demo-oidc-token). No client secret.')
+        definition {
+          cps {
+            script(pipelineScript('example-azure-role.groovy'))
+            sandbox()
+          }
+        }
+      }
+
+      pipelineJob('example-gcp-role') {
+        description('Example: GCP Workload Identity Federation + service account impersonation (credential gcp-demo-oidc-token). No service account key.')
+        definition {
+          cps {
+            script(pipelineScript('example-gcp-role.groovy'))
+            sandbox()
+          }
+        }
+      }
+
+      // ---------------------------------------------------------------------
+      // Example jobs: the two ways to wire a pipeline to SCM, plus the example
+      // Jenkinsfiles that live in this repository.
+      //
+      // The source is a snapshot of this project built into the image at
+      // /opt/demo/repo.git (branches main and feature/demo), so the examples work
+      // offline. Each job picks a different scriptPath: one repository, several
+      // pipelines. See README.md -> "Job styles and example Jenkinsfiles".
+      // ---------------------------------------------------------------------
+
+      // Without multibranch: one job, one fixed branch, no scanning.
+      pipelineJob('example-single-branch') {
+        description('Example: plain pipeline job pinned to main, running the root Jenkinsfile (self-check). One job, no branch discovery.')
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('/opt/demo/repo.git')
+                }
+                branch('*/main')
+              }
+            }
+            scriptPath('Jenkinsfile')
+            lightweight(true)
+          }
+        }
+      }
+
+      // With multibranch: one job per discovered branch, created on scan.
+      multibranchPipelineJob('example-multibranch') {
+        description('Example: multibranch scan of /opt/demo/repo.git. Creates job/main and job/feature%2Fdemo automatically.')
+        branchSources {
+          git {
+            id('example-multibranch-git')
+            remote('/opt/demo/repo.git')
+            includes('*')
+          }
+        }
+        factory {
+          workflowBranchProjectFactory {
+            scriptPath('Jenkinsfile')
+          }
+        }
+        orphanedItemStrategy {
+          discardOldItems { numToKeep(5) }
+        }
+      }
+
+      pipelineJob('example-basic') {
+        description('Example: examples/Jenkinsfile.basic — the smallest useful pipeline.')
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('/opt/demo/repo.git')
+                }
+                branch('*/main')
+              }
+            }
+            scriptPath('examples/Jenkinsfile.basic')
+            lightweight(true)
+          }
+        }
+      }
+
+      pipelineJob('example-parameters-approval') {
+        description('Example: examples/Jenkinsfile.parameters-approval — parameters, manual approval, guarded apply. No cloud calls.')
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('/opt/demo/repo.git')
+                }
+                branch('*/main')
+              }
+            }
+            scriptPath('examples/Jenkinsfile.parameters-approval')
+            lightweight(true)
+          }
+        }
+      }
+
+      pipelineJob('example-terraform') {
+        description('Example: examples/Jenkinsfile.terraform — real terraform fmt/init/validate against examples/terraform (offline).')
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('/opt/demo/repo.git')
+                }
+                branch('*/main')
+              }
+            }
+            scriptPath('examples/Jenkinsfile.terraform')
+            lightweight(true)
+          }
+        }
+      }

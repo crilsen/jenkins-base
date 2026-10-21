@@ -1,0 +1,20 @@
+// Smallest useful pipeline: one stage, no SCM logic, no credentials.
+// Compare with Jenkinsfile.parameters-approval and Jenkinsfile.terraform.
+
+pipeline {
+  agent { label 'terraform' }
+  options { timestamps() }
+
+  stages {
+    stage('Hello') {
+      steps {
+        sh '''#!/bin/sh
+set -eu
+echo "hello from $(hostname)"
+echo "branch: ${BRANCH_NAME:-<none>}"
+terraform version | head -1
+'''
+      }
+    }
+  }
+}

@@ -1,0 +1,50 @@
+jenkins:
+  systemMessage: "Local CI demo — not for production"
+  numExecutors: 2
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "admin"
+          password: "change-me"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+# Job definitions live in casc/jobs.yaml (versioned, no secrets). This file owns
+# `jenkins:` and `credentials:` only — defining the same key in both files is a
+# CasC conflict.
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          # Used by the aws-waf-security pipeline (Validate -> Plan -> Apply).
+          - string:
+              scope: GLOBAL
+              id: "waf-deploy-role-arn"
+              secret: "arn:aws:iam::<ACCOUNT_ID>:role/waf-deploy"
+              description: "Role assumed by the pipeline through STS (no static keys in the job)"
+
+          # Used by example-aws-role.
+          - string:
+              scope: GLOBAL
+              id: "aws-demo-role-arn"
+              secret: "arn:aws:iam::<ACCOUNT_ID>:role/jenkins-demo"
+              description: "Role assumed by example-aws-role through STS (demo only)"
+
+          # Used by example-azure-role. In a real workload-identity deployment the
+          # platform injects this token as a file; here it is pasted in by hand.
+          # The token must carry the audience api://AzureADTokenExchange.
+          - string:
+              scope: GLOBAL
+              id: "azure-demo-oidc-token"
+              secret: "REPLACE_ME_AZURE_OIDC_TOKEN"
+              description: "OIDC ID token with aud api://AzureADTokenExchange (demo only)"
+
+          # Used by example-gcp-role. Same caveat as the Azure token: supply an ID
+          # token whose issuer/subject the Workload Identity Pool provider trusts.
+          - string:
+              scope: GLOBAL
+              id: "gcp-demo-oidc-token"
+              secret: "REPLACE_ME_GCP_OIDC_TOKEN"
+              description: "OIDC ID token trusted by the GCP WIF provider (demo only)"

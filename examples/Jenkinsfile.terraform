@@ -1,0 +1,48 @@
+// Terraform pipeline that actually runs the binary, offline:
+// fmt -> init (no backend) -> validate, against the fixture in examples/terraform.
+// Nothing is planned or applied, so no credentials and no state are involved.
+
+pipeline {
+  agent { label 'terraform' }
+  options { timestamps() }
+
+  environment {
+    TF_IN_AUTOMATION = '1'
+    TF_INPUT         = '0'
+    TF_DIR           = 'examples/terraform'
+  }
+
+  stages {
+    stage('fmt') {
+      steps {
+        sh '''#!/bin/sh
+set -eu
+terraform fmt -check -diff -recursive "${TF_DIR}"
+echo "formatting OK"
+'''
+      }
+    }
+
+    stage('init') {
+      steps {
+        dir("${env.TF_DIR}") {
+          sh '''#!/bin/sh
+set -eu
+terraform init -backend=false -input=false -no-color
+'''
+        }
+      }
+    }
+
+    stage('validate') {
+      steps {
+        dir("${env.TF_DIR}") {
+          sh '''#!/bin/sh
+set -eu
+terraform validate -no-color
+'''
+        }
+      }
+    }
+  }
+}

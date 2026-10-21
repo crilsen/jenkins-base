@@ -1,0 +1,30 @@
+name: jenkins-base
+
+services:
+  jenkins:
+    build:
+      context: .
+    image: jenkins-base:1.0
+    container_name: jenkins-base
+    ports:
+      - "127.0.0.1:${JENKINS_PORT:-8082}:8080"
+      - "127.0.0.1:${JENKINS_AGENT_PORT:-50001}:50000"
+    volumes:
+      # Jenkins state as a plain host directory, not a Docker volume: `docker compose
+      # down -v`, `docker system prune --volumes` and a Docker upgrade cannot touch it.
+      # Local default ./data/jenkins_home; on a server set an absolute path outside the
+      # checkout, e.g. JENKINS_HOME_DIR=/srv/jenkins/home.
+      - "${JENKINS_HOME_DIR:-./data/jenkins_home}:/var/jenkins_home"
+      # Read-only access to the operator's AWS credentials so the pipeline can assume
+      # its deployment role. Prefer SSO/`aws login` or an instance profile over
+      # long-lived keys.
+      - "${HOME}/.aws:/var/jenkins_home/.aws:ro"
+      - ./casc:/opt/casc:ro
+      - ./init:/var/jenkins_home/init.groovy.d:ro
+    environment:
+      # Both CasC files must stay supplementary: jenkins.yaml owns `jenkins:` and
+      # `credentials:`, jobs.yaml owns `jobs:`. Listing the files explicitly keeps
+      # casc/jenkins.yaml.example out of the load.
+      CASC_JENKINS_CONFIG: /opt/casc/jenkins.yaml,/opt/casc/jobs.yaml
+      TZ: America/Sao_Paulo
+    restart: unless-stopped

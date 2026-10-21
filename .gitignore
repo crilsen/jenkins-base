@@ -1,0 +1,13 @@
+# Real config with the admin password and the role ARN
+casc/jenkins.yaml
+
+# Terraform working dir created by examples/Jenkinsfile.terraform when run locally
+examples/terraform/.terraform/
+examples/terraform/.terraform.lock.hcl
+
+# Runtime state (bind mount) and local env
+data/
+.env
+
+# Lab backups (state snapshots)
+backups/
