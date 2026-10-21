@@ -2,7 +2,7 @@
 
 ## Resume block (read first)
 
-- Repo state: git repository; see `git log -1` for the current commit.
+- Repo state: git repository, branch `main`; remote `git@github.com:crilsen/jenkins-base.git` (public).
 - Source of truth: `AGENTS.md` → `.ai/`
 - Budget / usage observed: `unknown` (not exposed to the agent)
 - Checkpoint updated: `2026-10-21`
