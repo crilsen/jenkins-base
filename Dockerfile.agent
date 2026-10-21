@@ -1,0 +1,96 @@
+# Agent image — everything a build needs.
+#
+# The controller is deliberately NOT built: it runs the stock
+# jenkins/jenkins:lts-jdk17 image pinned by digest (see docker-compose.yml) and
+# resolves its plugins at first boot from plugins.txt. This image carries the
+# toolchain, the offline demo repository and the wrapper that connects to the
+# controller, so the controller stays lean and disposable.
+FROM jenkins/inbound-agent:latest-jdk17@sha256:b0c41a6b69468ac7c72ad25c2a364e6b5f116a1ea44510642bd629a6323f0fab
+
+USER root
+
+# Same pin policy as before (ADR-007): exact versions, checksums where upstream
+# publishes one. The base is Debian 13 (trixie), same release as the controller.
+ARG TERRAFORM_VERSION=1.16.1
+ARG TERRAFORM_SHA256=745d33b4b02b7980c62a38ec1beea24ee084ea8caf3f503c200554bd9a0cbe49
+ARG AWSCLI_VERSION=2.38.4
+ARG AWSCLI_SHA256=10ab32a95b27138d7cc1c1ac4ebb4d3acab60cd0a0df2fc37c4e2c440ed40bce
+ARG KUBECTL_VERSION=v1.37.1
+ARG KUBECTL_SHA256=65691ff77eb6fa44c908b77a1082c9f092c3b9733b5cefabec0d1104890e21a8
+ARG HELM_VERSION=v4.3.1
+ARG HELM_SHA256=0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b
+ARG GCLOUD_VERSION=590.0.0
+ARG GCLOUD_SHA256=1503a6fcda689d1e1013a421e2c85850e7f58382c0be7064877b5e1a1038bc64
+ARG AZURE_CLI_VERSION=2.91.0
+ARG OCI_CLI_VERSION=3.95.1
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      ca-certificates=20250419+deb13u1 \
+      curl=8.14.1-2+deb13u7 \
+      unzip=6.0-29+deb13u1 \
+      jq=1.7.1-6+deb13u4 \
+      git=1:2.47.3-0+deb13u1 \
+      python3=3.13.5-1 \
+      python3-venv=3.13.5-1 \
+      python3-yaml=6.0.2-1+b2 \
+ && apt-get clean \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    curl -fsSL -o /tmp/terraform.zip \
+      "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip"; \
+    echo "${TERRAFORM_SHA256}  /tmp/terraform.zip" | sha256sum -c -; \
+    unzip -q /tmp/terraform.zip -d /usr/local/bin; \
+    chmod +x /usr/local/bin/terraform; \
+    rm -f /tmp/terraform.zip; \
+    \
+    curl -fsSL -o /tmp/awscliv2.zip \
+      "https://awscli.amazonaws.com/awscli-exe-linux-x86_64-${AWSCLI_VERSION}.zip"; \
+    echo "${AWSCLI_SHA256}  /tmp/awscliv2.zip" | sha256sum -c -; \
+    unzip -q /tmp/awscliv2.zip -d /tmp; \
+    /tmp/aws/install; \
+    rm -rf /tmp/aws /tmp/awscliv2.zip; \
+    \
+    curl -fsSL -o /usr/local/bin/kubectl \
+      "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"; \
+    echo "${KUBECTL_SHA256}  /usr/local/bin/kubectl" | sha256sum -c -; \
+    chmod +x /usr/local/bin/kubectl; \
+    \
+    curl -fsSL -o /tmp/helm.tar.gz \
+      "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"; \
+    echo "${HELM_SHA256}  /tmp/helm.tar.gz" | sha256sum -c -; \
+    tar -xzf /tmp/helm.tar.gz -C /tmp; \
+    install -m 0755 /tmp/linux-amd64/helm /usr/local/bin/helm; \
+    rm -rf /tmp/helm.tar.gz /tmp/linux-amd64
+
+RUN set -eux; \
+    curl -fsSL -o /tmp/gcloud.tar.gz \
+      "https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-${GCLOUD_VERSION}-linux-x86_64.tar.gz"; \
+    echo "${GCLOUD_SHA256}  /tmp/gcloud.tar.gz" | sha256sum -c -; \
+    tar -xzf /tmp/gcloud.tar.gz -C /opt; \
+    /opt/google-cloud-sdk/install.sh --quiet --usage-reporting false \
+      --path-update false --command-completion false; \
+    rm -f /tmp/gcloud.tar.gz
+
+ENV PATH=/opt/google-cloud-sdk/bin:$PATH
+
+RUN set -eux; \
+    python3 -m venv /opt/azure-cli; \
+    /opt/azure-cli/bin/pip install --no-cache-dir "azure-cli==${AZURE_CLI_VERSION}"; \
+    ln -s /opt/azure-cli/bin/az /usr/local/bin/az; \
+    \
+    python3 -m venv /opt/oci-cli; \
+    /opt/oci-cli/bin/pip install --no-cache-dir "oci-cli==${OCI_CLI_VERSION}"; \
+    ln -s /opt/oci-cli/bin/oci /usr/local/bin/oci
+
+# NOTE: the demo repository is NOT baked here. It is built from the mounted project
+# files and served by the `git` service in docker-compose.yml, so editing a Jenkinsfile
+# takes effect on the next `docker compose up` instead of needing an image rebuild.
+
+COPY scripts/agent-entrypoint.sh /usr/local/bin/agent-entrypoint.sh
+RUN chmod +x /usr/local/bin/agent-entrypoint.sh
+
+USER jenkins
+
+ENTRYPOINT ["/usr/local/bin/agent-entrypoint.sh"]

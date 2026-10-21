@@ -87,7 +87,7 @@ jobs:
       // Jenkinsfiles that live in this repository.
       //
       // The source is a snapshot of this project built into the image at
-      // /opt/demo/repo.git (branches main and feature/demo), so the examples work
+      // http://git:8080/repo.git (branches main and feature/demo), so the examples work
       // offline. Each job picks a different scriptPath: one repository, several
       // pipelines. See README.md -> "Job styles and example Jenkinsfiles".
       // ---------------------------------------------------------------------
@@ -100,7 +100,7 @@ jobs:
             scm {
               git {
                 remote {
-                  url('/opt/demo/repo.git')
+                  url('http://git:8080/repo.git')
                 }
                 branch('*/main')
               }
@@ -113,11 +113,11 @@ jobs:
 
       // With multibranch: one job per discovered branch, created on scan.
       multibranchPipelineJob('example-multibranch') {
-        description('Example: multibranch scan of /opt/demo/repo.git. Creates job/main and job/feature%2Fdemo automatically.')
+        description('Example: multibranch scan of http://git:8080/repo.git. Creates job/main and job/feature%2Fdemo automatically.')
         branchSources {
           git {
             id('example-multibranch-git')
-            remote('/opt/demo/repo.git')
+            remote('http://git:8080/repo.git')
             includes('*')
           }
         }
@@ -138,7 +138,7 @@ jobs:
             scm {
               git {
                 remote {
-                  url('/opt/demo/repo.git')
+                  url('http://git:8080/repo.git')
                 }
                 branch('*/main')
               }
@@ -156,7 +156,7 @@ jobs:
             scm {
               git {
                 remote {
-                  url('/opt/demo/repo.git')
+                  url('http://git:8080/repo.git')
                 }
                 branch('*/main')
               }
@@ -174,7 +174,7 @@ jobs:
             scm {
               git {
                 remote {
-                  url('/opt/demo/repo.git')
+                  url('http://git:8080/repo.git')
                 }
                 branch('*/main')
               }

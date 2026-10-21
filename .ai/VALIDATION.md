@@ -94,7 +94,19 @@ Confirm via the API that `aws-waf-security`, `example-aws-role`, `example-azure-
 pipeline bodies. Then `docker compose down` (keep the volume unless the test was meant to
 reset state).
 
-### 4. Example jobs (safe to start; they stop at the placeholder check)
+### 4. Agent health
+
+```bash
+make agents     # agent-1 must be "online", executors=2, labels include terraform
+make verify     # waits for the agent and fails if it never comes online
+```
+
+A build that hangs waiting for an executor means no agent matches the label. If the agent
+is offline, the controller log shows whether the secret was published
+(`[init] published the agent secret for agent-1`) and `docker compose logs agent` shows the
+connection attempt.
+
+### 5. Example jobs (safe to start; they stop at the placeholder check)
 
 Running `example-*` build now should fail fast with `exit 78` and a message naming the
 credential to fill in — that is the expected result and proves the guard works. Running
@@ -113,7 +125,14 @@ needs the `aws-waf-security` repository to be reachable and the deployment role 
 No project-specific validation is automated (no tests, no CI for this repository). The
 checks above are manual.
 
-**Last full validation — 2026-10-21:** the pinned toolchain image built (checksums passed,
+**Last full validation — 2026-10-21 (agent split):** the controller runs the stock image
+with 0 executors and no labels; `agent-1` is online with 2 executors and labels
+`terraform,linux,cloud`; the `git` service serves the demo repository and both the
+controller and the agent can `git ls-remote` it; five builds (`example-single-branch`,
+`example-basic`, `example-terraform`, `multibranch/main`, `multibranch/feature/demo`)
+finished **SUCCESS** with `node: agent-1` in the console.
+
+**Previous validation — 2026-10-21:** the pinned toolchain image built (checksums passed,
 4.07 GB); every CLI reports the pinned version (`terraform 1.16.1`, `aws-cli 2.38.4`,
 `kubectl v1.37.1`, `helm v4.3.1`, `gcloud 590.0.0`, `az 2.91.0`, `oci 3.95.1`,
 `python 3.13.5`, 70 pinned plugins); CasC created all nine jobs; the multibranch job

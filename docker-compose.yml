@@ -1,10 +1,11 @@
 name: jenkins-base
 
 services:
+  # Controller: the stock official image, pinned by digest. No build — plugins are
+  # resolved at first boot from plugins.txt and then live in the state directory. It has
+  # zero executors: builds run on the agent.
   jenkins:
-    build:
-      context: .
-    image: jenkins-base:1.0
+    image: jenkins/jenkins:lts-jdk17@sha256:cce1eeb79902722f3cf7a8831c41e95c39f4a42b9a2981959630cc66539b3c2d
     container_name: jenkins-base
     ports:
       - "127.0.0.1:${JENKINS_PORT:-8082}:8080"
@@ -15,16 +16,75 @@ services:
       # Local default ./data/jenkins_home; on a server set an absolute path outside the
       # checkout, e.g. JENKINS_HOME_DIR=/srv/jenkins/home.
       - "${JENKINS_HOME_DIR:-./data/jenkins_home}:/var/jenkins_home"
-      # Read-only access to the operator's AWS credentials so the pipeline can assume
-      # its deployment role. Prefer SSO/`aws login` or an instance profile over
-      # long-lived keys.
-      - "${HOME}/.aws:/var/jenkins_home/.aws:ro"
       - ./casc:/opt/casc:ro
       - ./init:/var/jenkins_home/init.groovy.d:ro
+      - ./plugins.txt:/usr/share/jenkins/ref/plugins.txt:ro
+      # Hand-off directory for the agent secret (init/02-publish-agent-secret.groovy).
+      - ./data/agent-secret:/opt/agent-secret
     environment:
       # Both CasC files must stay supplementary: jenkins.yaml owns `jenkins:` and
       # `credentials:`, jobs.yaml owns `jobs:`. Listing the files explicitly keeps
       # casc/jenkins.yaml.example out of the load.
       CASC_JENKINS_CONFIG: /opt/casc/jenkins.yaml,/opt/casc/jobs.yaml
+      AGENT_NODE_NAME: agent-1
+      AGENT_SECRET_DIR: /opt/agent-secret
+      TZ: America/Sao_Paulo
+    # Plugins are installed on the first boot only; the marker lives in the state
+    # directory, so later starts skip the download. `make plugins` forces a refresh.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        if [ ! -f "$$JENKINS_HOME/.plugins-installed" ]; then
+          echo "installing pinned plugins from plugins.txt"
+          jenkins-plugin-cli --plugin-file /usr/share/jenkins/ref/plugins.txt
+          touch "$$JENKINS_HOME/.plugins-installed"
+        fi
+        exec /usr/bin/tini -- /usr/local/bin/jenkins.sh
+    restart: unless-stopped
+
+  # Agent: built image with the toolchain. Builds and checkouts happen here, so this is
+  # where the credentials live. Jobs reach it by label (agent { label 'terraform' }).
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    image: jenkins-base-agent:1.0
+    container_name: jenkins-base-agent
+    depends_on:
+      - jenkins
+    volumes:
+      - ./data/agent-secret:/opt/agent-secret:ro
+      # Read-only access to the operator's AWS credentials so the pipeline can assume its
+      # deployment role. Prefer SSO/`aws login` or an instance profile.
+      - "${HOME}/.aws:/home/jenkins/.aws:ro"
+      - agent_workspace:/home/jenkins/agent
+    environment:
+      JENKINS_URL: http://jenkins:8080
+      AGENT_NAME: agent-1
       TZ: America/Sao_Paulo
     restart: unless-stopped
+
+  # Demo SCM: builds a repository from the mounted project files and serves it over plain
+  # HTTP (dumb git protocol). The controller reads the Jenkinsfile from here for
+  # lightweight checkout and multibranch indexing, so it needs neither the toolchain nor
+  # an ALLOW_LOCAL_CHECKOUT relaxation. Edit a Jenkinsfile and `make restart`.
+  git:
+    image: jenkins-base-agent:1.0
+    container_name: jenkins-base-git
+    entrypoint: ["/bin/sh", "/usr/local/bin/seed-repo.sh"]
+    environment:
+      # The image runs as uid 1000 (jenkins), which cannot write to /srv.
+      SERVE_DIR: /tmp/srv
+    volumes:
+      - ./Jenkinsfile:/seed/Jenkinsfile:ro
+      - ./examples:/seed/examples:ro
+      - ./casc/jobs.yaml:/seed/casc/jobs.yaml:ro
+      - ./casc/jenkins.yaml.example:/seed/casc/jenkins.yaml.example:ro
+      - ./casc/pipelines:/seed/casc/pipelines:ro
+      - ./docker-compose.yml:/seed/docker-compose.yml:ro
+      - ./scripts/seed-repo.sh:/usr/local/bin/seed-repo.sh:ro
+    restart: unless-stopped
+
+volumes:
+  agent_workspace:

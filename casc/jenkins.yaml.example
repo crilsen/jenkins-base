@@ -1,6 +1,10 @@
 jenkins:
   systemMessage: "Local CI demo — not for production"
-  numExecutors: 2
+  # Zero executors: the controller schedules, it does not build. Builds run on the
+  # agent declared below (image built from Dockerfile.agent).
+  numExecutors: 0
+  # The controller has no labels of its own: jobs must land on the agent.
+  labelString: ""
   securityRealm:
     local:
       allowsSignup: false
@@ -10,6 +14,19 @@ jenkins:
   authorizationStrategy:
     loggedInUsersCanDoAnything:
       allowAnonymousRead: false
+  # The inbound agent connects over WebSocket (agent -> controller), which is what makes
+  # it work on a plain Compose network. The controller publishes the generated secret to
+  # a shared directory; see init/02-publish-agent-secret.groovy.
+  nodes:
+    - permanent:
+        name: "agent-1"
+        remoteFS: "/home/jenkins/agent"
+        numExecutors: 2
+        mode: NORMAL
+        labelString: "terraform linux cloud"
+        launcher:
+          inbound:
+            webSocket: true
 
 # Job definitions live in casc/jobs.yaml (versioned, no secrets). This file owns
 # `jenkins:` and `credentials:` only — defining the same key in both files is a

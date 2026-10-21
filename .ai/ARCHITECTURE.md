@@ -10,42 +10,37 @@ pipelines against AWS, Azure, GCP, or on-prem targets. Today it executes the
 baseline: the controller builds on itself and there are no remote agents.
 
 ```text
-docker compose up -d --build
-        │
-        ├── image jenkins-base:1.0
-        │     FROM jenkins/jenkins:lts-jdk17
-        │     + terraform <pinned ARG>  + awscli v2 + jq, git, python3, curl, unzip
-        │     + plugins.txt (configuration-as-code, job-dsl, workflow-*, git,
-        │                    credentials-binding, timestamper, ansicolor,
-        │                    pipeline-stage-view, matrix-auth)
-        │
-        └── container jenkins-base  (127.0.0.1:8081 → 8080, 50000 → 50000)
-              ├── /var/jenkins_home            named volume `jenkins_home`
-              ├── /var/jenkins_home/.aws       ${HOME}/.aws (read-only)
-              ├── /opt/casc                    ./casc (read-only)
-              └── /var/jenkins_home/init.groovy.d  ./init (read-only)
-                  │
-                  ├── CasC: casc/jenkins.yaml  (jenkins: + credentials:)
-                  │     ├── securityRealm: local users (admin)
-                  │     ├── authorization: loggedInUsersCanDoAnything
-                  │     └── credentials: waf-deploy-role-arn, aws-demo-role-arn,
-                  │                      azure-demo-oidc-token, gcp-demo-oidc-token
-                  │
-                  └── CasC: casc/jobs.yaml  (jobs:)
-                        ├── aws-waf-security (multibranch, git, main, Jenkinsfile)
-                        ├── example-aws-role     → casc/pipelines/example-aws-role.groovy
-                        ├── example-azure-role   → casc/pipelines/example-azure-role.groovy
-                        └── example-gcp-role     → casc/pipelines/example-gcp-role.groovy
+docker compose up -d
+        |
+        +-- controller  jenkins-base   (127.0.0.1:8082 -> 8080, 50001 -> 50000)
+        |     stock jenkins/jenkins:lts-jdk17@sha256:... , numExecutors: 0
+        |     +-- data/jenkins_home          bind mount, the state
+        |     +-- /opt/casc                  ./casc (read-only)
+        |     +-- init.groovy.d              ./init (read-only)
+        |     +-- data/agent-secret          JNLP secret hand-off
+        |
+        +-- agent  jenkins-base-agent   built from Dockerfile.agent
+        |     labels: terraform, linux, cloud ; 2 executors
+        |     toolchain + /home/jenkins/.aws (read-only) + workspace volume
+        |
+        +-- git  jenkins-base-git   http://git:8080/repo.git
+              repository built at startup from the mounted project files
 ```
 
-Both CasC files are listed in `CASC_JENKINS_CONFIG` and must stay supplementary:
-each top-level key belongs to exactly one file, otherwise CasC raises a conflict.
+Only the agent image is built. The controller is the official image pinned by digest and
+resolves its plugins at first boot from `plugins.txt` into the state directory; the demo
+repository is generated from mounted files instead of being baked into an image, so
+editing a Jenkinsfile needs `docker compose restart git`, not a rebuild.
 
 ## Components
 
 | Component | File | Responsibility |
 | --- | --- | --- |
-| Image | `Dockerfile` | Jenkins LTS (pinned by digest) + pinned Debian packages + Terraform, AWS/Azure/GCP/OCI CLIs, kubectl, helm; disables the setup wizard; sets `CASC_JENKINS_CONFIG` |
+| Controller image | (none) | The stock `jenkins/jenkins:lts-jdk17` image, pinned by digest; plugins resolve at first boot |
+| Agent image | `Dockerfile.agent` | The toolchain, built from `jenkins/inbound-agent` pinned by digest |
+| Agent entrypoint | `scripts/agent-entrypoint.sh` | Waits for the JNLP secret, connects over WebSocket, retries |
+| Secret hand-off | `init/02-publish-agent-secret.groovy` | Publishes the node secret to `data/agent-secret` |
+| Demo SCM | `scripts/seed-repo.sh` | Builds and serves the demo repository over HTTP |
 | Plugins | `plugins.txt` | Fully resolved, pinned plugin set installed by `jenkins-plugin-cli` |
 | Runtime | `docker-compose.yml` | Port mapping (loopback only), volumes, `TZ`, `restart: unless-stopped` |
 | Configuration as Code | `casc/jenkins.yaml` | Security realm, authorization, credentials |

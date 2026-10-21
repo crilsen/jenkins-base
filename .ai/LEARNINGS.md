@@ -198,3 +198,43 @@ Context: syntax test — two jobs (`zz-syntax-test`, `zz-syntax-test2`) were add
 Evidence: after the second reload both jobs were still present (`make jobs` listed 11); only `POST /job/<name>/doDelete` removed them. No error in the log.
 Pattern / rule: removing a job block from `casc/jobs.yaml` does not delete the job. Delete it explicitly (UI or `doDelete`) or it stays as untracked state that no longer matches the repository. The same applies to jobs created by hand in the UI.
 Promotion: CONVENTIONS.md
+
+### L-019 — Lightweight checkout and multibranch indexing read the Jenkinsfile on the controller
+Date: 2026-10-21
+Status: promoted
+Confidence: observed
+Scope: `docker-compose.yml`, `casc/jobs.yaml`
+Context: moving the demo repository from the controller image into the agent image.
+Evidence: builds then failed with `GitException ... does not appear to be a git repository`, raised from `CpsScmFlowDefinition.create` / `GitSCMFileSystem` — on the controller, before any agent ran. Multibranch indexing fails the same way.
+Pattern / rule: the controller must be able to read the SCM even though the checkout happens on the agent. Serve the repository as a remote (the `git` service) instead of baking it into the agent image.
+Promotion: DECISIONS.md#ADR-009
+
+### L-020 — The inbound-agent wrapper reads every option from the environment
+Date: 2026-10-21
+Status: active
+Confidence: observed
+Scope: `scripts/agent-entrypoint.sh`
+Context: connecting the agent container to the controller.
+Evidence: passing `-url ... -name agent-1 -webSocket` while also exporting `JENKINS_NAME` produced `Warning: AGENT_NAME is defined twice ...` then `Two arguments required, but got [agent-1]` and the usage text.
+Pattern / rule: export `JENKINS_URL`, `JENKINS_NAME`, `JENKINS_SECRET`, `JENKINS_WEB_SOCKET=true`, `JENKINS_AGENT_WORKDIR` and run `/usr/local/bin/jenkins-agent` with no arguments. Exporting the secret also keeps it out of `ps`.
+Promotion: CONVENTIONS.md
+
+### L-021 — The node secret comes from `SlaveComputer.getJnlpMac()`, and CasC applies after init scripts
+Date: 2026-10-21
+Status: active
+Confidence: observed
+Scope: `init/02-publish-agent-secret.groovy`
+Context: the agent needs the per-node secret Jenkins generates; the node is declared in CasC.
+Evidence: `hudson.slaves.JNLPLauncher` has no `secret` field and the node's `config.xml` has no `<secret>`; `getJnlpMac()` exists on `SlaveComputer` and returns the value also present in `/computer/<node>/slave-agent.jnlp`. An init script ran before CasC created the node.
+Pattern / rule: publish the secret from a background thread in an init script that polls until the node exists, and make the consumer retry too — do not assume ordering.
+Promotion: DECISIONS.md#ADR-009
+
+### L-022 — `python3 - <<'PY'` steals the stdin that was piped in
+Date: 2026-10-21
+Status: active
+Confidence: observed
+Scope: `scripts/*.sh`
+Context: parsing a JSON API response with a Python heredoc.
+Evidence: `curl ... | python3 - <<'PY'` produced `curl: Failed writing body` and an empty parse: the heredoc became Python's stdin.
+Pattern / rule: use `python3 -c '...'` for piped data (single quotes outside, double quotes inside), or write the JSON to a file first. Backslashes inside single-quoted shell strings are literal, so never escape quotes there.
+Promotion: none

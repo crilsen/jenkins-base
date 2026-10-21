@@ -4,16 +4,17 @@
 # jenkins-base:1.0 image after a Dockerfile edit (the tag never changes).
 #
 # State lives in ${JENKINS_HOME_DIR:-./data/jenkins_home} — a plain host directory,
-# so `docker compose down -v` cannot delete it.
+# so `docker compose down -v` cannot delete it. The controller is the stock official
+# image (no build); only the agent image is built.
 SHELL := /bin/sh
 COMPOSE := docker compose
 PORT ?= 8082
 AGENT_PORT ?= 50001
-IMAGE ?= jenkins-base:1.0
+AGENT_IMAGE ?= jenkins-base-agent:1.0
 
 .DEFAULT_GOAL := help
 
-.PHONY: help secrets build up start down restart logs shell status verify tools jobs backup restore reset
+.PHONY: help secrets build up start down restart logs shell status verify tools jobs agents plugins backup restore reset
 
 help: ## show this help
 	@grep -hE '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /  →  /'
@@ -57,8 +58,16 @@ status: ## container state + size of the state directory
 verify: ## wait for Jenkins, then check the API and the job count
 	@./scripts/verify.sh
 
-tools: ## print the pinned tool versions inside the image
-	docker run --rm --entrypoint sh $(IMAGE) -c '\
+agents: ## list the nodes and whether they are online
+	@./scripts/agents.sh
+
+plugins: ## reinstall/update the pinned plugins into the state directory, then restart
+	$(COMPOSE) run --rm --entrypoint jenkins-plugin-cli jenkins \
+	  --plugin-file /usr/share/jenkins/ref/plugins.txt -d /var/jenkins_home/plugins
+	@echo "now: make restart"
+
+tools: ## print the pinned tool versions inside the agent image
+	docker run --rm --entrypoint sh $(AGENT_IMAGE) -c '\
 	  terraform version | head -1; aws --version; kubectl version --client | head -1; \
 	  helm version --short; gcloud --version | head -1; oci --version; az version | head -3; \
 	  python3 --version'

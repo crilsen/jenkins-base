@@ -49,6 +49,7 @@ Consequences:
 | ADR-006 | ADR | Rename the project to `jenkins-base`; pin the Compose project name | Accepted | 2026-10-21 | inline |
 | ADR-007 | ADR | Reproducible image: pin base digest, packages, every CLI and all plugins | Accepted | 2026-10-21 | inline |
 | ADR-008 | ADR | Jenkins state in a host bind mount instead of a Docker volume | Accepted | 2026-10-21 | inline |
+| ADR-009 | ADR | Stock controller image, toolchain only in the agent, demo SCM served over HTTP | Accepted | 2026-10-21 | inline |
 
 ## Records
 
@@ -262,6 +263,45 @@ never be committed. Persistence stays per-machine: a new host starts empty and i
 seeded with `make restore`, and backups must be copied off the machine. Verified by
 running `docker compose down -v` and restarting: 9 jobs and the previous builds
 survived.
+
+Do not backfill invented history. Record decisions that are observed, expressly documented,
+or approved during future work.
+
+### ADR-009 — Stock controller image, toolchain only in the agent, demo SCM served over HTTP
+
+Type: ADR | Status: Accepted | Date: 2026-10-21 | Owners: repository maintainer
+
+**Context:** one image did everything: it carried the cloud toolchain, the plugin set and
+the demo repository, and the controller built on itself. The controller was therefore the
+hardest thing to rebuild, and "the machine that schedules" was coupled to "the machine that
+runs pipelines".
+
+**Decision:** three services.
+
+- `jenkins` — the **stock** `jenkins/jenkins:lts-jdk17` image pinned by digest, with
+  `numExecutors: 0` and no labels. Plugins are resolved at first boot from `plugins.txt`
+  into the state directory (a marker file makes later boots skip it; `make plugins`
+  refreshes). There is no controller `Dockerfile`.
+- `agent` — built from `Dockerfile.agent` (`jenkins/inbound-agent`, same Debian release)
+  with the toolchain, labels `terraform,linux,cloud`, connected over WebSocket. The node is
+  declared in CasC (`jenkins.nodes`); `init/02-publish-agent-secret.groovy` publishes the
+  generated JNLP secret to `data/agent-secret` and the agent entrypoint reads it (never as
+  a command-line argument, so it stays out of `ps`).
+- `git` — builds the demo repository at startup from the mounted project files and serves
+  it over HTTP (dumb git protocol).
+
+**Reasoning:** the controller should be the boring, replaceable part, and the toolchain
+belongs where the builds happen. Serving the demo repo over HTTP removes the
+`ALLOW_LOCAL_CHECKOUT` relaxation and removes the need for the controller to hold the
+repository: lightweight checkout and multibranch indexing read the Jenkinsfile over HTTP.
+Generating the repository at startup means editing a Jenkinsfile costs a `restart`, not an
+image rebuild.
+
+**Consequences:** the agent secret must be handed over, which is why the init script and
+the entrypoint's retry loop exist — a controller restart rotates it and the agent
+reconnects. Plugin installation moved from build time to first boot, so the pinned set
+materialises in the state directory. The agent image is the only build, and the controller
+image is upstream's. Verified: five example builds run with `node: agent-1`.
 
 Do not backfill invented history. Record decisions that are observed, expressly documented,
 or approved during future work.

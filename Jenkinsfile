@@ -106,13 +106,24 @@ python3 - <<'PY'
 import yaml
 
 compose = yaml.safe_load(open('docker-compose.yml'))
-service = compose['services']['jenkins']
+project = compose.get('name')
+services = compose['services']
+service = services['jenkins']
+
 casc = service['environment']['CASC_JENKINS_CONFIG']
 parts = [p.strip() for p in casc.split(',')]
 assert parts == ['/opt/casc/jenkins.yaml', '/opt/casc/jobs.yaml'], (
     f'CASC_JENKINS_CONFIG must list both CasC files, got {casc!r}')
-assert service['container_name'] == 'jenkins-base'
-print('Compose OK:', service['container_name'], '|', ','.join(parts))
+assert service['container_name'] == project, (
+    f"container_name ({service['container_name']!r}) must match the Compose project name ({project!r})")
+
+# The architecture this repository claims: the controller is the stock image (no build)
+# and builds run on a separate agent.
+assert 'build' not in service, 'the controller must not be built: use the official image'
+assert 'agent' in services, 'an agent service must be declared'
+assert services['agent'].get('build'), 'the agent image is the one that gets built'
+
+print('Compose OK:', project, '|', ','.join(parts))
 PY
 '''
       }

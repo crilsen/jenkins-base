@@ -1,9 +1,14 @@
 # jenkins-base — a reproducible local Jenkins for multicloud Terraform
 
-A Jenkins controller in Docker, configured entirely as code, meant to be a
-**template**: clone it, run `make up`, and you have a controller that can run
-Terraform and cloud pipelines against AWS, Azure, GCP, OCI, Kubernetes or on-prem
-targets — with every tool version pinned and every job declared in YAML.
+A Jenkins setup in Docker, configured entirely as code, meant to be a **template**:
+clone it, run `make up`, and you have a controller that can run Terraform and cloud
+pipelines against AWS, Azure, GCP, OCI, Kubernetes or on-prem targets — with every tool
+version pinned and every job declared in YAML.
+
+The controller is the **stock `jenkins/jenkins` image** (pinned by digest, no custom
+build, zero executors); the toolchain lives in a separate **agent** image. That split is
+the point of the repository: the part that schedules is boring and replaceable, and the
+part that runs pipelines carries the tools.
 
 It is deliberately generic, and honest about being a local baseline rather than a
 production controller — see [Good practice: what this does, and what it deliberately does
@@ -28,9 +33,10 @@ not](#good-practice-what-this-does-and-what-it-deliberately-does-not).
 ## Quickstart
 
 ```bash
-make up        # secrets + build + start
-make verify    # wait for Jenkins, check the API, count the jobs
-make tools     # print the pinned tool versions inside the image
+make up        # secrets + build the agent image + start everything
+make verify    # wait for Jenkins, check the API, job count and agent health
+make agents    # list nodes, executors and labels
+make tools     # print the pinned tool versions inside the agent image
 ```
 
 Console: <http://localhost:8082> — user `admin`, password in `casc/jenkins.yaml`
@@ -42,26 +48,43 @@ read-only).
 
 ## Architecture
 
+Three services. Only the agent image is built; the controller is stock, and the demo SCM
+is generated from the mounted files.
+
 ```text
 docker compose up -d
-   │
-   ├── image jenkins-base:1.0
-   │     jenkins/jenkins:lts-jdk17 (digest) + Terraform + AWS/Azure/GCP/OCI CLIs
-   │     + kubectl + helm + pinned plugin set
-   │
-   └── container jenkins-base   (127.0.0.1:8082 → 8080, 50001 → 50000)
-         ├── data/jenkins_home           host directory, the state
-         ├── data/jenkins_home/.aws      ~/.aws (read-only)
-         ├── /opt/casc                   ./casc (read-only)
-         └── /var/jenkins_home/init.groovy.d  ./init (read-only)
-             │
-             ├── CasC: casc/jenkins.yaml   jenkins: + credentials:
-             └── CasC: casc/jobs.yaml      jobs:
+   |
+   +-- controller  jenkins-base        stock jenkins/jenkins:lts-jdk17 (digest), 0 executors
+   |     +-- data/jenkins_home         state: plugins resolved at first boot, jobs, builds
+   |     +-- /opt/casc                 ./casc (read-only)
+   |     +-- init.groovy.d             ./init (read-only)
+   |     +-- data/agent-secret         hands the agent its JNLP secret
+   |
+   +-- agent  jenkins-base-agent       built from Dockerfile.agent
+   |     labels: terraform, linux, cloud - 2 executors
+   |     toolchain: terraform, aws, az, gcloud, oci, kubectl, helm, python3, jq, git
+   |     ~/.aws read-only; workspace in a named volume
+   |
+   +-- git  jenkins-base-git           serves http://git:8080/repo.git
+         built from the mounted Jenkinsfile/examples/casc files at startup
 ```
 
-The two CasC files must stay supplementary — each top-level key belongs to exactly
-one file, otherwise CasC raises a conflict. `CASC_JENKINS_CONFIG` lists both files
-explicitly so `jenkins.yaml.example` is never loaded.
+Why this shape:
+
+- **The controller carries no toolchain and no executors.** It schedules, serves the UI
+  and applies CasC. There is no controller build to get wrong, and a controller restart
+  cannot lose the ability to run pipelines.
+- **The agent is the disposable part.** Its image is rebuilt from `Dockerfile.agent`, and
+  jobs request it by label (`agent { label 'terraform' }`), so adding a second agent is a
+  Compose service, not a pipeline change.
+- **The agent secret is handed over, not typed in.** Jenkins generates a secret per node;
+  `init/02-publish-agent-secret.groovy` publishes it to a shared directory and the agent's
+  entrypoint reads it (never as a command-line argument), retrying across controller
+  restarts.
+- **The demo repository is a real remote** (HTTP, dumb git protocol) instead of a local
+  path: the controller can read Jenkinsfiles for lightweight checkout and multibranch
+  indexing without the toolchain, and nothing needs the `ALLOW_LOCAL_CHECKOUT`
+  relaxation.
 
 ## Persistence
 
@@ -108,11 +131,11 @@ backups must be copied off the machine — a tarball on the same disk is not a b
 | OCI CLI | 3.95.1 | pip in its own venv |
 | Jenkins plugins | 70 entries | fully resolved `name:version` list |
 
-A changed upstream artifact fails the build on its checksum instead of silently
-changing the image. `az` and `oci` live in isolated venvs under `/opt` so their
-Python dependencies cannot break the system Python Jenkins uses. The image is
-~4.1 GB, dominated by `az` and `gcloud`; per-cloud derived images
-(`FROM jenkins-base:1.0`) are the escape hatch.
+A changed upstream artifact fails the build on its checksum instead of silently changing
+the image. `az` and `oci` live in isolated venvs under `/opt` so their Python dependencies
+cannot break the system Python. All of it is in the **agent** image (~3.6 GB, dominated by
+`az` and `gcloud`); the controller image is upstream's (~0.8 GB) and carries no tools.
+Per-cloud derived agents (`FROM jenkins-base-agent:1.0`) are the escape hatch.
 
 ## Jobs
 
@@ -132,24 +155,24 @@ The three role examples use only `curl` and `jq` on purpose: they show the token
 exchange itself rather than wrapping `az`/`gcloud`. They fail fast with a clear
 message while their credential still holds a placeholder, and never echo a secret.
 
-The example jobs clone a snapshot of this repository's Jenkinsfiles baked into the
-image at `/opt/demo/repo.git` (branches `main` and `feature/demo`), so the examples
-work offline. That requires `-Dhudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true`,
-which is a demo-only trade — drop it and point the jobs at a real remote before
-sharing this controller.
+The example jobs clone `http://git:8080/repo.git`: a repository built at startup from the
+mounted project files and served by the `git` service, with branches `main` and
+`feature/demo`. It works offline, needs no GitHub account, and is a real remote — so no
+`ALLOW_LOCAL_CHECKOUT` relaxation is involved. Point `remote(...)` in `casc/jobs.yaml` at a
+real repository and nothing else changes.
 
 ## Repository layout
 
 ```
-Dockerfile             Jenkins + the pinned toolchain
-plugins.txt            fully resolved plugin set
-docker-compose.yml     container, ports, bind-mounted state
-Makefile               build / up / verify / backup / restore / reset / tools
+Dockerfile.agent       the agent image: pinned toolchain (the only build)
+plugins.txt            fully resolved plugin set, installed at first boot
+docker-compose.yml     controller + agent + demo SCM, ports, bind-mounted state
+Makefile               build / up / verify / agents / plugins / backup / restore / reset
 casc/                  CasC: jobs.yaml (tracked) + jenkins.yaml(.example)
 casc/pipelines/        pipeline bodies for the role examples
-init/                  Groovy init script (controller label)
+init/                  init script that hands the agent its secret
 examples/              example Jenkinsfiles + offline Terraform fixture
-scripts/               backup, restore, reset, jobs, verify
+scripts/               agent entrypoint, demo-repo seeding, backup, verify, jobs
 .ai/                   portable agent context: decisions, conventions, validation
 ```
 
@@ -163,13 +186,14 @@ scorecard — where the practice is followed, and where it is not:
 | Job definition | ✅ in code (`casc/jobs.yaml`), reviewed in git | same, plus drift detection against the running controller |
 | Pipeline definition | ✅ `Jenkinsfile` in the project repository, never in the job | same |
 | Controller configuration | ✅ CasC for realm, credentials and jobs | same |
-| Reproducible image | ✅ base digest, apt versions, every CLI with a checksum, plugins fully pinned | same, plus a rebuild pipeline and per-cloud derived images |
+| Reproducible images | ✅ base digests, apt versions, every CLI with a checksum, plugins fully pinned | same, plus a rebuild pipeline and per-cloud derived images |
+| Controller build | ✅ none: the stock official image, plugins resolved at first boot | same |
 | State vs artifact | ✅ state in a host directory; backup and restore tested | same, plus scheduled off-box backups and restore drills |
 | Cloud credentials | ✅ role assumption / workload identity, no static keys | same |
 | Secrets at rest | ⚠️ live CasC file git-ignored, demo tokens as Jenkins credentials | a secret manager or JCasC secret sources; only platform-issued tokens |
 | Authorization | ❌ `loggedInUsersCanDoAnything`, single local admin | `matrix-auth` roles or SSO/OIDC with least privilege |
-| Agents | ❌ the controller builds on itself (`label 'terraform'`) | dedicated agents; the controller does not execute builds |
-| SCM wiring | ⚠️ example jobs clone a repository baked into the image (`ALLOW_LOCAL_CHECKOUT`) | real remotes, webhooks, per-repository credentials |
+| Agents | ✅ controller with 0 executors; a separate agent image runs the builds | same, plus ephemeral agents (Kubernetes/EC2) for stronger isolation |
+| SCM wiring | ✅ real remote (the `git` service over HTTP); no local-checkout relaxation | a hosted remote, webhooks, per-repository credentials |
 | Transport | ❌ plain HTTP, bound to `127.0.0.1` | TLS behind a reverse proxy |
 | Build retention | ❌ no `buildDiscarder` on the jobs | a retention policy per job |
 | CI for this repository | ⚠️ the self-check `Jenkinsfile` exists, but nothing runs it automatically | CI on push running those same checks |
@@ -185,17 +209,18 @@ of claiming the whole thing is best practice.
 ## Design decisions
 
 The reasoning behind the choices above — including why the plugin set is pinned in
-full, why the demo repository is baked into the image, and why the state is a bind
-mount — is recorded in [`.ai/DECISIONS.md`](.ai/DECISIONS.md). Conventions, guardrails
+full, why the controller is the stock image while the toolchain lives in the agent, and
+why the state is a bind mount — is recorded in [`.ai/DECISIONS.md`](.ai/DECISIONS.md). Conventions, guardrails
 and validation steps live next to it, so an agent (or a new maintainer) can pick the
 repository up without prior context. Start at [`AGENTS.md`](AGENTS.md).
 
 ## Security notes
 
 - The container binds to `127.0.0.1` only.
-- No AWS keys are stored in Jenkins: `~/.aws` is mounted read-only and the pipeline
-  assumes a role through STS.
+- No AWS keys are stored in Jenkins: `~/.aws` is mounted read-only **into the agent** and
+  the pipeline assumes a role through STS.
 - `casc/jenkins.yaml` holds the admin password and is git-ignored; never commit it.
-- `loggedInUsersCanDoAnything` and building on the controller are deliberate demo
-  simplifications. For anything shared: real agents, `matrix-auth` roles, TLS behind a
-  reverse proxy, and platform-injected tokens instead of pasted ones.
+- `loggedInUsersCanDoAnything` is a deliberate demo simplification, and the agent secret
+  is handed over through a shared directory rather than an agent configuration
+  management tool. For anything shared: `matrix-auth` roles, TLS behind a reverse proxy,
+  platform-injected tokens instead of pasted ones, and ephemeral agents.

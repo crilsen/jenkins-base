@@ -23,6 +23,12 @@
 
 ## Completed
 
+- 2026-10-21 — Split controller and agent (ADR-009): stock controller image with 0
+  executors, toolchain in `Dockerfile.agent`, node declared in CasC with its secret
+  published by an init script, demo repository built and served over HTTP by the `git`
+  service (which removed the `ALLOW_LOCAL_CHECKOUT` relaxation). Five builds verified green
+  on `agent-1`. Added `make agents` / `make plugins`; `make verify` now waits for the agent.
+
 - 2026-10-21 — Context adopted; every `.ai/` placeholder replaced with observed facts.
 - 2026-10-21 — CasC split by top-level key; three per-cloud role examples added.
 - 2026-10-21 — Renamed to `jenkins-base` with the Compose project name pinned.
