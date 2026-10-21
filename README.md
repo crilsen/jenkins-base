@@ -6,7 +6,8 @@ Terraform and cloud pipelines against AWS, Azure, GCP, OCI, Kubernetes or on-pre
 targets — with every tool version pinned and every job declared in YAML.
 
 It is deliberately generic, and honest about being a local baseline rather than a
-production controller.
+production controller — see [Good practice: what this does, and what it deliberately does
+not](#good-practice-what-this-does-and-what-it-deliberately-does-not).
 
 ## What it demonstrates
 
@@ -151,6 +152,35 @@ examples/              example Jenkinsfiles + offline Terraform fixture
 scripts/               backup, restore, reset, jobs, verify
 .ai/                   portable agent context: decisions, conventions, validation
 ```
+
+## Good practice: what this does, and what it deliberately does not
+
+This repository is a **demonstration**, not a production controller. Here is the honest
+scorecard — where the practice is followed, and where it is not:
+
+| Area | Here | A production setup would |
+| --- | --- | --- |
+| Job definition | ✅ in code (`casc/jobs.yaml`), reviewed in git | same, plus drift detection against the running controller |
+| Pipeline definition | ✅ `Jenkinsfile` in the project repository, never in the job | same |
+| Controller configuration | ✅ CasC for realm, credentials and jobs | same |
+| Reproducible image | ✅ base digest, apt versions, every CLI with a checksum, plugins fully pinned | same, plus a rebuild pipeline and per-cloud derived images |
+| State vs artifact | ✅ state in a host directory; backup and restore tested | same, plus scheduled off-box backups and restore drills |
+| Cloud credentials | ✅ role assumption / workload identity, no static keys | same |
+| Secrets at rest | ⚠️ live CasC file git-ignored, demo tokens as Jenkins credentials | a secret manager or JCasC secret sources; only platform-issued tokens |
+| Authorization | ❌ `loggedInUsersCanDoAnything`, single local admin | `matrix-auth` roles or SSO/OIDC with least privilege |
+| Agents | ❌ the controller builds on itself (`label 'terraform'`) | dedicated agents; the controller does not execute builds |
+| SCM wiring | ⚠️ example jobs clone a repository baked into the image (`ALLOW_LOCAL_CHECKOUT`) | real remotes, webhooks, per-repository credentials |
+| Transport | ❌ plain HTTP, bound to `127.0.0.1` | TLS behind a reverse proxy |
+| Build retention | ❌ no `buildDiscarder` on the jobs | a retention policy per job |
+| CI for this repository | ⚠️ the self-check `Jenkinsfile` exists, but nothing runs it automatically | CI on push running those same checks |
+| Licence | ❌ none | an explicit licence |
+
+Legend: ✅ follows the practice · ⚠️ partial, or a deliberate compromise · ❌ not done.
+
+The ⚠️ and ❌ rows are deliberate for a loopback-only demo, and each one is recorded in
+[`.ai/DECISIONS.md`](.ai/DECISIONS.md) with its reasoning. Adopting this repository means
+deciding about each of them explicitly — which is the point of writing them down instead
+of claiming the whole thing is best practice.
 
 ## Design decisions
 
