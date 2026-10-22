@@ -5,9 +5,9 @@ casc/jenkins.yaml
 examples/terraform/.terraform/
 examples/terraform/.terraform.lock.hcl
 
-# Lab backups (volume snapshots)
+# State snapshots made by scripts/backup.sh (bind-mounted state, not a volume)
 backups/
 
-# Runtime state (bind mount) and local env
+# Runtime state (bind mount, includes the agent secret) and local env
 data/
 .env
