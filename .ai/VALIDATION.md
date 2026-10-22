@@ -12,12 +12,9 @@ Versions live in `Dockerfile` ARGs (and `plugins.txt`); `docker-compose.yml` doe
 repeat them. Verify a change by rebuilding **without cache** and confirming the trace:
 
 ```bash
-docker build --no-cache -t jenkins-base:1.0 .          # checksums must pass
-docker image inspect jenkins-base:1.0 --format '{{.Size}}'
-docker run --rm --entrypoint sh jenkins-base:1.0 -c '
-  terraform version | head -1; aws --version; kubectl version --client -o yaml | head -3;
-  helm version --short; gcloud --version | head -1; az version | head -4; oci --version;
-  python3 --version'
+make build                        # rebuilds the agent image (checksums must pass)
+make tools                        # prints the pinned versions inside the agent image
+docker compose ps                 # every service must be healthy
 ```
 
 If a checksum fails, either upstream republished the artifact (treat it as a review
@@ -80,7 +77,7 @@ file in `casc/pipelines/`, and `CASC_JENKINS_CONFIG` lists both CasC files (Dock
 ### 2. Image build (allowed, but slow and network-dependent)
 
 ```bash
-docker build --build-arg TERRAFORM_VERSION=1.16.1 -t jenkins-base:1.0 .
+docker build -f Dockerfile.agent -t jenkins-agent:1.0 .
 ```
 
 Validates `plugins.txt` (plugin resolution against the update center), the AWS CLI
@@ -106,14 +103,13 @@ reset state).
 ### 4. Agent health
 
 ```bash
-make agents     # agent-1 must be "online", executors=2, labels include terraform
-make verify     # waits for the agent and fails if it never comes online
+make agents     # agent-1 must be "online" with executors=2 and the terraform label
+make verify     # fails if agent-1 is offline
 ```
 
-A build that hangs waiting for an executor means no agent matches the label. If the agent
-is offline, the controller log shows whether the secret was published
+If the agent is offline, the controller log shows whether the secret was published
 (`[init] published the agent secret for agent-1`) and `docker compose logs agent` shows the
-connection attempt.
+connection. A build that hangs waiting for an executor means no agent matches the label.
 
 ### 5. Example jobs (safe to start; they stop at the placeholder check)
 
@@ -143,11 +139,11 @@ build, while `admin` gets 201; `example-basic` finished **SUCCESS** and its job 
 contains `<numToKeep>20</numToKeep>`, proving retention was applied.
 
 **Previous validation — 2026-10-21 (agent split):** the controller runs the stock image
-with 0 executors and no labels; `agent-1` is online with 2 executors and labels
-`terraform,linux,cloud`; the `git` service serves the demo repository and both the
-controller and the agent can `git ls-remote` it; five builds (`example-single-branch`,
-`example-basic`, `example-terraform`, `multibranch/main`, `multibranch/feature/demo`)
-finished **SUCCESS** with `node: agent-1` in the console.
+with 0 executors; `agent-1` is online with 2 executors and labels `terraform,linux,cloud`;
+the `git` service serves the demo repo and both the controller and the agent can
+`git ls-remote` it; five builds (`example-single-branch`, `example-basic`,
+`example-terraform`, `multibranch/main`, `multibranch/feature/demo`) finished **SUCCESS**
+with `node: agent-1` in the console, proving the build ran on the agent.
 
 **Previous validation — 2026-10-21:** the pinned toolchain image built (checksums passed,
 4.07 GB); every CLI reports the pinned version (`terraform 1.16.1`, `aws-cli 2.38.4`,

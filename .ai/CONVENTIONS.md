@@ -34,10 +34,41 @@
 
 ### Compose
 
-- Image tagged with an explicit short version (`jenkins-base:1.0`).
+- The agent image is tagged with an explicit short version (`jenkins-base-agent:1.0`).
 - `container_name` matches the project name (`jenkins-base`), and the Compose
   project name is pinned with a top-level `name:` so it does not depend on the
   checkout directory.
+- **Two repositories, one content.** The public portfolio and the private lab hold the
+  same implementation; only the identity (project name, ports, ADR numbering, secrets)
+  differs. Every improvement lands in both — `make sync-check` compares this repository
+  against the sibling checkout and fails on drift. The lab may run ahead; the portfolio
+  must never be behind.
+- **The controller is never built.** It is the official image pinned by digest with
+  `numExecutors: 0`; plugins resolve at first boot from `plugins.txt`. Only the agent image
+  (`Dockerfile.agent`) is built.
+- **The toolchain lives in the agent image**, and jobs request it by label
+  (`agent { label 'terraform' }`). Never mount the operator's `~/.aws` into the controller.
+- **Demo SCM is a real remote** (`git` service over HTTP), never a local path: that is what
+  keeps `ALLOW_LOCAL_CHECKOUT` out of the setup and lets the controller read Jenkinsfiles
+  without the toolchain.
+- **Authorization is `globalMatrix`** (matrix-auth), with the least privilege that works:
+  one administrator and one read-only account. The CasC symbol is `globalMatrix`, not
+  `matrix` — the wrong symbol crash-loops the controller at boot.
+- **TLS terminates in the `proxy` service**, never in the controller. Jenkins stays HTTP
+  inside the network and knows its public URL through `unclassified.location.url`.
+- **Every pipeline declares `buildDiscarder`**; retention belongs in the build definition,
+  which is also what covers multibranch children.
+- **Checks live in `scripts/check.sh`** and are called by both CI and the self-check
+  pipeline. Never duplicate a check into a workflow or a Jenkinsfile.
+- **Every service has a healthcheck**, and dependents use
+  `depends_on: condition: service_healthy` instead of retry loops.
+- **State is a bind mount, never a named volume:**
+  `${JENKINS_HOME_DIR:-./data/jenkins_home}:/var/jenkins_home`. A volume is deleted by
+  `down -v` and by `prune --volumes`; a host directory is only removed by an explicit
+  `rm -rf`, guarded by a script that asks for `yes`.
+- The state directory must be writable by uid `1000` (the container's `jenkins` user),
+  and on a server it belongs outside the checkout (`/srv/jenkins/home`) so a redeploy
+  cannot touch it. `data/` and `.env` are git-ignored.
 - Host ports are interpolated with defaults (`${JENKINS_PORT:-8081}`) and always bound to
   `127.0.0.1`.
 - Config and init directories are mounted `:ro`; only `jenkins_home` is writable state.

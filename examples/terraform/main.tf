@@ -22,7 +22,7 @@ variable "environment" {
 locals {
   tags = {
     environment = var.environment
-    managed_by  = "jenkins-base"
+    managed_by  = "jenkins"
     component   = "terraform-validate-fixture"
   }
 }

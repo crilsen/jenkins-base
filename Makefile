@@ -14,7 +14,7 @@ AGENT_IMAGE ?= jenkins-base-agent:1.0
 
 .DEFAULT_GOAL := help
 
-.PHONY: help secrets check build up start down restart logs shell status verify tools jobs agents plugins ca backup restore reset
+.PHONY: help secrets check sync-check build up start down restart logs shell status verify tools jobs agents plugins ca backup restore reset
 
 help: ## show this help
 	@grep -hE '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /  →  /'
@@ -36,6 +36,9 @@ secrets: ## create casc/jenkins.yaml from the example with random passwords
 
 check: ## run the repository checks (same ones CI and the self-check pipeline run)
 	@./scripts/check.sh
+
+sync-check: ## diff this repository against the sibling checkout (lab <-> portfolio)
+	@./scripts/sync-check.sh $(SIBLING)
 
 ca: ## export the proxy's local CA so the browser can trust https://localhost:8443
 	@docker compose cp proxy:/data/caddy/pki/authorities/local/root.crt ./data/caddy-root.crt

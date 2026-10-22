@@ -4,7 +4,7 @@
 # dependencies to the newest matching version, so a build could drift without
 # this file changing. This list is the complete resolved set, generated with:
 #
-#   docker exec jenkins-base jenkins-plugin-cli --list | tail -n +2 | tr " " ":" | sort
+#   docker exec <controller> jenkins-plugin-cli --list | tail -n +2 | tr " " ":" | sort
 #
 # Bump plugins and their transitive dependencies together, then rebuild and let
 # the build fail loudly if an entry disappeared from the update center.

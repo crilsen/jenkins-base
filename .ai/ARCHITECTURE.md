@@ -32,28 +32,27 @@ docker compose up -d
 
 Only the agent image is built. The controller is the official image pinned by digest and
 resolves its plugins at first boot from `plugins.txt` into the state directory; the demo
-repository is generated from mounted files instead of being baked into an image, so
+repository is generated from mounted files instead of being baked into any image, so
 editing a Jenkinsfile needs `docker compose restart git`, not a rebuild.
 
 ## Components
 
 | Component | File | Responsibility |
 | --- | --- | --- |
-| Controller image | (none) | The stock `jenkins/jenkins:lts-jdk17` image, pinned by digest; plugins resolve at first boot |
-| Agent image | `Dockerfile.agent` | The toolchain, built from `jenkins/inbound-agent` pinned by digest |
-| Agent entrypoint | `scripts/agent-entrypoint.sh` | Waits for the JNLP secret, connects over WebSocket, retries |
-| Secret hand-off | `init/02-publish-agent-secret.groovy` | Publishes the node secret to `data/agent-secret` |
-| Demo SCM | `scripts/seed-repo.sh` | Builds and serves the demo repository over HTTP |
-| TLS proxy | `proxy/Caddyfile` | Terminates TLS for the browser; Jenkins stays HTTP internally |
-| Repository checks | `scripts/check.sh` | One definition of the checks, run by CI and by the pipeline |
-| CI | `.github/workflows/check.yml` | Runs `scripts/check.sh` on push/PR |
+| Image | `Dockerfile` | Jenkins LTS (pinned by digest) + pinned Debian packages + Terraform, AWS/Azure/GCP/OCI CLIs, kubectl, helm; disables the setup wizard; sets `CASC_JENKINS_CONFIG` |
 | Plugins | `plugins.txt` | Fully resolved, pinned plugin set installed by `jenkins-plugin-cli` |
 | Runtime | `docker-compose.yml` | Port mapping (loopback only), volumes, `TZ`, `restart: unless-stopped` |
 | Configuration as Code | `casc/jenkins.yaml` | Security realm, authorization, credentials |
 | CasC template | `casc/jenkins.yaml.example` | Committed, secret-free template |
 | Job definitions | `casc/jobs.yaml` | All jobs; versioned, no secrets; loads pipeline bodies from disk |
 | Pipelines | `casc/pipelines/*.groovy` | One inline pipeline per example job (AWS, Azure, GCP role assumption) |
-| Init script | `init/01-terraform-label.groovy` | Labels controller `terraform`, sets 2 executors |
+| Agent image | `Dockerfile.agent` | The toolchain; built from `jenkins/inbound-agent` pinned by digest |
+| Agent entrypoint | `scripts/agent-entrypoint.sh` | Waits for the JNLP secret, connects over WebSocket, retries |
+| Secret hand-off | `init/02-publish-agent-secret.groovy` | Publishes the node secret to `data/agent-secret` |
+| Demo SCM | `scripts/seed-repo.sh` | Builds and serves the demo repository over HTTP |
+| TLS proxy | `proxy/Caddyfile` | Terminates TLS for the browser; Jenkins stays HTTP internally |
+| Repository checks | `scripts/check.sh` | One definition of the checks, run by CI and by the pipeline |
+| CI | `.github/workflows/check.yml` | Runs `scripts/check.sh` on push/PR |
 | Docs | `README.md` | Prerequisites, run/build instructions, parameters, examples, security notes |
 
 ## Pinned toolchain
@@ -115,10 +114,12 @@ Notes:
 
 ## Environments and deployment
 
-- One environment: the operator's machine. No staging, no production, no IaC for the
-  host, no CI/CD for this repository itself.
-- Volume state lives in the named volume `<project>_jenkins_home` (`jenkins-base_jenkins_home`
-  with the pinned Compose `name:`); `docker compose down -v` destroys it.
+- One environment: the operator's machine today. On another server the same Compose file
+  is reused with `JENKINS_HOME_DIR` pointing outside the checkout (`/srv/jenkins/home`);
+  there is still no IaC for the host and no CI/CD for this repository itself.
+- State is a plain host directory (`data/jenkins_home`, or `$JENKINS_HOME_DIR`), so
+  `docker compose down -v` and `docker system prune --volumes` do not delete it. It is
+  removed only by `make reset` / `rm -rf`. Backups are tarballs in `backups/`.
 - The Terraform state the *pipeline* uses lives in the target repository's remote
   backend (`TF_STATE_BUCKET`), not here.
 
