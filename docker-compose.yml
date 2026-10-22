@@ -41,6 +41,14 @@ services:
           touch "$$JENKINS_HOME/.plugins-installed"
         fi
         exec /usr/bin/tini -- /usr/local/bin/jenkins.sh
+    # Docker-level health: `docker compose ps` shows healthy/unhealthy, and the other
+    # services wait for it (depends_on: service_healthy) instead of retrying blindly.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/login >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
     restart: unless-stopped
 
   # Agent: built image with the toolchain. Builds and checkouts happen here, so this is
@@ -52,7 +60,8 @@ services:
     image: jenkins-base-agent:1.0
     container_name: jenkins-base-agent
     depends_on:
-      - jenkins
+      jenkins:
+        condition: service_healthy
     volumes:
       - ./data/agent-secret:/opt/agent-secret:ro
       # Read-only access to the operator's AWS credentials so the pipeline can assume its
@@ -63,6 +72,15 @@ services:
       JENKINS_URL: http://jenkins:8080
       AGENT_NAME: agent-1
       TZ: America/Sao_Paulo
+    # The agent process is either running the remoting JVM or restarting it; if the JVM is
+    # gone, the container is not doing its job.
+    healthcheck:
+      # The image has no pgrep/ps, so scan /proc for the remoting JVM instead.
+      test: ["CMD-SHELL", "for c in /proc/[0-9]*/cmdline; do tr '\\0' ' ' < \"$$c\" 2>/dev/null | grep -q agent.jar && exit 0; done; exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     restart: unless-stopped
 
   # Demo SCM: builds a repository from the mounted project files and serves it over plain
@@ -84,7 +102,39 @@ services:
       - ./casc/pipelines:/seed/casc/pipelines:ro
       - ./docker-compose.yml:/seed/docker-compose.yml:ro
       - ./scripts/seed-repo.sh:/usr/local/bin/seed-repo.sh:ro
+      # The self-check pipeline runs this, so the demo repository must contain it.
+      - ./scripts/check.sh:/seed/scripts/check.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/repo.git/info/refs?service=git-upload-pack >/dev/null || curl -fsS http://localhost:8080/repo.git/info/refs >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  # TLS termination. Jenkins stays on plain HTTP inside the network; this is the only
+  # service a browser talks to. `make ca` exports the local CA it generates.
+  proxy:
+    image: caddy:2-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f
+    container_name: jenkins-base-proxy
+    depends_on:
+      jenkins:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${JENKINS_HTTPS_PORT:-8443}:8443"
+    volumes:
+      - ./proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - proxy_data:/data
+      - proxy_config:/config
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --no-check-certificate -O /dev/null https://localhost:8443/login || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     restart: unless-stopped
 
 volumes:
   agent_workspace:
+  proxy_data:
+  proxy_config:

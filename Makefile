@@ -14,20 +14,34 @@ AGENT_IMAGE ?= jenkins-base-agent:1.0
 
 .DEFAULT_GOAL := help
 
-.PHONY: help secrets build up start down restart logs shell status verify tools jobs agents plugins backup restore reset
+.PHONY: help secrets check build up start down restart logs shell status verify tools jobs agents plugins ca backup restore reset
 
 help: ## show this help
 	@grep -hE '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /  →  /'
 
-secrets: ## create casc/jenkins.yaml from the example with a random admin password
+secrets: ## create casc/jenkins.yaml from the example with random passwords
 	@if [ -f casc/jenkins.yaml ]; then \
 	  echo "casc/jenkins.yaml exists — left untouched"; \
 	else \
-	  PASS=$$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | head -c 16); \
-	  sed "s/password: \"change-me\"/password: \"$$PASS\"/" casc/jenkins.yaml.example > casc/jenkins.yaml; \
+	  ADMIN=$$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | head -c 16); \
+	  VIEWER=$$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | head -c 16); \
+	  sed -e "s/password: \"change-me-viewer\"/password: \"$$VIEWER\"/" \
+	      -e "s/password: \"change-me\"/password: \"$$ADMIN\"/" \
+	      casc/jenkins.yaml.example > casc/jenkins.yaml; \
 	  echo "created casc/jenkins.yaml"; \
-	  echo "admin password: $$PASS   (store it in a password manager)"; \
+	  echo "admin password:  $$ADMIN"; \
+	  echo "viewer password: $$VIEWER   (read-only account)"; \
+	  echo "store both in a password manager"; \
 	fi
+
+check: ## run the repository checks (same ones CI and the self-check pipeline run)
+	@./scripts/check.sh
+
+ca: ## export the proxy's local CA so the browser can trust https://localhost:8443
+	@docker compose cp proxy:/data/caddy/pki/authorities/local/root.crt ./data/caddy-root.crt
+	@echo "exported to data/caddy-root.crt; to trust it system-wide:"
+	@echo "  sudo cp data/caddy-root.crt /usr/local/share/ca-certificates/caddy-local.crt"
+	@echo "  sudo update-ca-certificates"
 
 build: ## build the image (pulls the base tag first)
 	$(COMPOSE) build --pull

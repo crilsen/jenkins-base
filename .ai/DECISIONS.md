@@ -50,6 +50,7 @@ Consequences:
 | ADR-007 | ADR | Reproducible image: pin base digest, packages, every CLI and all plugins | Accepted | 2026-10-21 | inline |
 | ADR-008 | ADR | Jenkins state in a host bind mount instead of a Docker volume | Accepted | 2026-10-21 | inline |
 | ADR-009 | ADR | Stock controller image, toolchain only in the agent, demo SCM served over HTTP | Accepted | 2026-10-21 | inline |
+| ADR-010 | ADR | Close the practice gaps: TLS proxy, least-privilege authorization, retention, CI, healthchecks | Accepted | 2026-10-21 | inline |
 
 ## Records
 
@@ -302,6 +303,49 @@ the entrypoint's retry loop exist — a controller restart rotates it and the ag
 reconnects. Plugin installation moved from build time to first boot, so the pinned set
 materialises in the state directory. The agent image is the only build, and the controller
 image is upstream's. Verified: five example builds run with `node: agent-1`.
+
+Do not backfill invented history. Record decisions that are observed, expressly documented,
+or approved during future work.
+
+### ADR-010 — Close the practice gaps: TLS proxy, least-privilege authorization, retention, CI, healthchecks
+
+Type: ADR | Status: Accepted | Date: 2026-10-21 | Owners: repository maintainer
+
+**Context:** the repository claimed good practice on configuration-as-code, reproducibility
+and credential handling, but its own scorecard listed five gaps: plain HTTP, any logged-in
+user being an administrator, unbounded build history, checks that nothing ran
+automatically, and no container health reporting.
+
+**Decision:**
+
+- **TLS** — a `proxy` service (Caddy, pinned by digest) terminates TLS for the browser on
+  `https://localhost:8443` with Caddy's internal CA (`make ca` exports it). Jenkins
+  keeps speaking plain HTTP inside the network, and `unclassified.location.url` is set to
+  the https URL so links and webhooks are correct. The controller keeps a loopback-only
+  port for automation.
+- **Authorization** — `globalMatrix` (matrix-auth): `Overall/Administer` for `admin`,
+  `Overall/Read` + `Job/Read` for a second account `viewer`. No anonymous access.
+- **Retention** — every pipeline declares
+  `buildDiscarder(logRotator(numToKeepStr: '20', daysToKeepStr: '30', artifactNumToKeepStr: '5'))`,
+  so the policy lives in the build definition and covers multibranch children too.
+- **CI** — `scripts/check.sh` is the single definition of the repository checks, called by
+  the self-check Jenkinsfile (on the agent) and by `.github/workflows/check.yml` (on a
+  GitHub runner), so the two cannot drift.
+- **Health** — Docker healthchecks on all four services, with
+  `depends_on: condition: service_healthy` so the agent and the demo SCM wait for a healthy
+  controller instead of retrying blindly.
+
+**Reasoning:** each gap was cheap to close and each one is verifiable, which is the whole
+point of the scorecard: a claim in the README should be checkable. Putting the checks in one
+script also means CI and Jenkins enforce the *same* policy — including the policy itself
+(matrix authorization, retention, loopback-only ports, no controller build).
+
+**Consequences:** the CasC symbol for the matrix strategy is `globalMatrix`, not `matrix`
+(a wrong symbol makes Jenkins fail to boot in a crash loop — see `.ai/LEARNINGS.md`);
+`scripts/check.sh` must be mounted into the demo repository so the pipeline can run it;
+`make secrets` now generates two passwords; and the proxy needs its CA trusted by the
+browser (`make ca`). Not closed yet: ephemeral agents, a real CA, and secrets from a secret
+manager.
 
 Do not backfill invented history. Record decisions that are observed, expressly documented,
 or approved during future work.

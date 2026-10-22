@@ -29,6 +29,15 @@ is removed from the pool. The fix is to bump the pinned versions, not to unpin.
 
 ## Checks for this repository
 
+### 0. The repository checks (one definition, two callers)
+
+```bash
+make check          # runs scripts/check.sh locally
+```
+
+The same script runs in CI (`.github/workflows/check.yml`) and as a stage of the
+self-check pipeline, so a policy change lands in one place.
+
 ### 1. Static validation (safe, always allowed)
 
 ```bash
@@ -125,7 +134,15 @@ needs the `aws-waf-security` repository to be reachable and the deployment role 
 No project-specific validation is automated (no tests, no CI for this repository). The
 checks above are manual.
 
-**Last full validation — 2026-10-21 (agent split):** the controller runs the stock image
+**Last full validation — 2026-10-21 (practice gaps closed):** `./scripts/check.sh` passes
+(it now also enforces matrix authorization, retention, healthchecks, the proxy and
+loopback-only ports); all four services report `healthy`; `https://localhost:8443/login`
+returns 200 through the proxy while `http://127.0.0.1:8082/login` still works for
+automation; `viewer` gets 200 on `/api/json` and 403 on CasC reload and on triggering a
+build, while `admin` gets 201; `example-basic` finished **SUCCESS** and its job config
+contains `<numToKeep>20</numToKeep>`, proving retention was applied.
+
+**Previous validation — 2026-10-21 (agent split):** the controller runs the stock image
 with 0 executors and no labels; `agent-1` is online with 2 executors and labels
 `terraform,linux,cloud`; the `git` service serves the demo repository and both the
 controller and the agent can `git ls-remote` it; five builds (`example-single-branch`,

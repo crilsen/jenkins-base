@@ -10,7 +10,10 @@
 
 pipeline {
   agent { label 'terraform' }
-  options { timestamps() }
+  options {
+    timestamps()
+    buildDiscarder(logRotator(numToKeepStr: '20', daysToKeepStr: '30', artifactNumToKeepStr: '5'))
+  }
 
   parameters {
     string(name: 'AWS_REGION', defaultValue: 'us-east-1',

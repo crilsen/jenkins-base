@@ -23,6 +23,12 @@
 
 ## Completed
 
+- 2026-10-21 — Closed five practice gaps (ADR-010): TLS proxy (Caddy, `make ca`),
+  least-privilege authorization (`globalMatrix` + a read-only `viewer`), retention
+  (`buildDiscarder` in every pipeline, verified in the job config), CI
+  (`.github/workflows/check.yml` running the same `scripts/check.sh` as the pipeline) and
+  Docker healthchecks with `service_healthy` ordering.
+
 - 2026-10-21 — Split controller and agent (ADR-009): stock controller image with 0
   executors, toolchain in `Dockerfile.agent`, node declared in CasC with its secret
   published by an init script, demo repository built and served over HTTP by the `git`

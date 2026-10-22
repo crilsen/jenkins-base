@@ -9,11 +9,21 @@ jenkins:
     local:
       allowsSignup: false
       users:
+        # `make secrets` replaces both passwords with random values on first setup.
         - id: "admin"
           password: "change-me"
+        - id: "viewer"
+          password: "change-me-viewer"
+  # Least privilege: an administrator and a read-only account, instead of
+  # loggedInUsersCanDoAnything (where any account is an administrator).
+  # Anonymous access is not granted, so a login is always required.
   authorizationStrategy:
-    loggedInUsersCanDoAnything:
-      allowAnonymousRead: false
+    # The CasC symbol here is `globalMatrix` (matrix-auth also offers `projectMatrix`).
+    globalMatrix:
+      permissions:
+        - "Overall/Administer:admin"
+        - "Overall/Read:viewer"
+        - "Job/Read:viewer"
   # The inbound agent connects over WebSocket (agent -> controller), which is what makes
   # it work on a plain Compose network. The controller publishes the generated secret to
   # a shared directory; see init/02-publish-agent-secret.groovy.
@@ -28,9 +38,16 @@ jenkins:
           inbound:
             webSocket: true
 
+# Jenkins must know its public URL: TLS terminates in the `proxy` service, so the root URL
+# is https and Jenkins builds correct absolute links (and webhook URLs) from it.
+unclassified:
+  location:
+    url: "https://localhost:8443/"
+    adminAddress: "jenkins@localhost"
+
 # Job definitions live in casc/jobs.yaml (versioned, no secrets). This file owns
-# `jenkins:` and `credentials:` only — defining the same key in both files is a
-# CasC conflict.
+# `jenkins:`, `credentials:` and `unclassified:` — defining the same key in two CasC files
+# is a conflict.
 credentials:
   system:
     domainCredentials:

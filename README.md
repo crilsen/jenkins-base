@@ -36,11 +36,15 @@ not](#good-practice-what-this-does-and-what-it-deliberately-does-not).
 make up        # secrets + build the agent image + start everything
 make verify    # wait for Jenkins, check the API, job count and agent health
 make agents    # list nodes, executors and labels
+make check     # the repository checks (same ones CI runs)
+make ca        # export the proxy's local CA so https://localhost:8443 is trusted
 make tools     # print the pinned tool versions inside the agent image
 ```
 
-Console: <http://localhost:8082> — user `admin`, password in `casc/jenkins.yaml`
-(created by `make secrets`, git-ignored). `make help` lists every target.
+Console: <https://localhost:8443> (via the proxy, TLS) or <http://localhost:8082> directly.
+Users: `admin` (administrator) and `viewer` (read-only); both passwords live in
+`casc/jenkins.yaml`, created by `make secrets` and git-ignored. `make help` lists every
+target.
 
 Prerequisites: Docker with Compose, and an AWS identity able to `sts:AssumeRole` on
 the deployment role if you want to run the WAF pipeline (`~/.aws` is mounted
@@ -66,7 +70,10 @@ docker compose up -d
    |     ~/.aws read-only; workspace in a named volume
    |
    +-- git  jenkins-base-git           serves http://git:8080/repo.git
-         built from the mounted Jenkinsfile/examples/casc files at startup
+   |     built from the mounted Jenkinsfile/examples/casc files at startup
+   |
+   +-- proxy  jenkins-base-proxy       https://localhost:8443  (Caddy, TLS internal)
+         the only service a browser talks to
 ```
 
 Why this shape:
@@ -85,6 +92,10 @@ Why this shape:
   path: the controller can read Jenkinsfiles for lightweight checkout and multibranch
   indexing without the toolchain, and nothing needs the `ALLOW_LOCAL_CHECKOUT`
   relaxation.
+- **TLS terminates in the `proxy` service**, so the controller keeps speaking plain HTTP
+  inside the network and Jenkins knows its public URL (`unclassified.location`).
+- **Every service has a healthcheck**, and `depends_on: service_healthy` replaces blind
+  retries when the agent and the demo SCM start.
 
 ## Persistence
 
@@ -191,12 +202,13 @@ scorecard — where the practice is followed, and where it is not:
 | State vs artifact | ✅ state in a host directory; backup and restore tested | same, plus scheduled off-box backups and restore drills |
 | Cloud credentials | ✅ role assumption / workload identity, no static keys | same |
 | Secrets at rest | ⚠️ live CasC file git-ignored, demo tokens as Jenkins credentials | a secret manager or JCasC secret sources; only platform-issued tokens |
-| Authorization | ❌ `loggedInUsersCanDoAnything`, single local admin | `matrix-auth` roles or SSO/OIDC with least privilege |
+| Health / startup order | ✅ Docker healthchecks on all four services; dependents wait for `service_healthy` | same, plus restart alerts |
+| Authorization | ✅ `globalMatrix`: `admin` administers, `viewer` is read-only (verified: 403 on admin-only endpoints) | SSO/OIDC on top of the same permissions |
 | Agents | ✅ controller with 0 executors; a separate agent image runs the builds | same, plus ephemeral agents (Kubernetes/EC2) for stronger isolation |
 | SCM wiring | ✅ real remote (the `git` service over HTTP); no local-checkout relaxation | a hosted remote, webhooks, per-repository credentials |
-| Transport | ❌ plain HTTP, bound to `127.0.0.1` | TLS behind a reverse proxy |
-| Build retention | ❌ no `buildDiscarder` on the jobs | a retention policy per job |
-| CI for this repository | ⚠️ the self-check `Jenkinsfile` exists, but nothing runs it automatically | CI on push running those same checks |
+| Transport | ✅ TLS via the `proxy` service (Caddy, local CA); everything stays on loopback | a real certificate and a managed proxy |
+| Build retention | ✅ every pipeline declares `buildDiscarder` (verified in the job config) | same, plus per-repo policy |
+| CI for this repository | ✅ GitHub Actions runs `scripts/check.sh` on push/PR — the same script the pipeline runs | same, plus image build and publish |
 | Licence | ❌ none | an explicit licence |
 
 Legend: ✅ follows the practice · ⚠️ partial, or a deliberate compromise · ❌ not done.

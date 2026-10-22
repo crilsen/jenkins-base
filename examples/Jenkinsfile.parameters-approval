@@ -4,7 +4,10 @@
 
 pipeline {
   agent { label 'terraform' }
-  options { timestamps() }
+  options {
+    timestamps()
+    buildDiscarder(logRotator(numToKeepStr: '20', daysToKeepStr: '30', artifactNumToKeepStr: '5'))
+  }
 
   parameters {
     choice(name: 'TARGET', choices: ['dev', 'staging', 'prod'],

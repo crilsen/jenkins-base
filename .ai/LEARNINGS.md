@@ -238,3 +238,23 @@ Context: parsing a JSON API response with a Python heredoc.
 Evidence: `curl ... | python3 - <<'PY'` produced `curl: Failed writing body` and an empty parse: the heredoc became Python's stdin.
 Pattern / rule: use `python3 -c '...'` for piped data (single quotes outside, double quotes inside), or write the JSON to a file first. Backslashes inside single-quoted shell strings are literal, so never escape quotes there.
 Promotion: none
+
+### L-023 — The CasC symbol for matrix authorization is `globalMatrix`, not `matrix`
+Date: 2026-10-21
+Status: promoted
+Confidence: observed
+Scope: `casc/jenkins.yaml`, `scripts/check.sh`
+Context: replacing `loggedInUsersCanDoAnything` with least privilege.
+Evidence: with `authorizationStrategy: matrix:`, Jenkins failed to boot in a crash loop: `UnknownAttributesException: authorizationStrategy: No hudson.security.AuthorizationStrategy implementation found for matrix` (exit 5, 13 restarts). The CasC schema (`/configuration-as-code/schema`) lists the valid symbols as `globalMatrix`, `projectMatrix`, `legacy`, `loggedInUsersCanDoAnything`, `unsecured`; matrix-auth was `enabled=True 3.3` the whole time.
+Pattern / rule: do not guess CasC symbols. Fetch `/configuration-as-code/schema` from a running controller (or the plugin's docs) and read the allowed values. A wrong symbol does not degrade: it prevents Jenkins from starting.
+Promotion: CONVENTIONS.md, DECISIONS.md#ADR-010
+
+### L-024 — `depends_on: service_healthy` turns a race into an order
+Date: 2026-10-21
+Status: active
+Confidence: observed
+Scope: `docker-compose.yml`
+Context: the agent and the demo SCM started before the controller finished booting.
+Evidence: before healthchecks, the agent spent ~30s retrying and `make verify` failed on a race; after adding a controller healthcheck (`curl -fsS http://localhost:8080/login`) and `depends_on: jenkins: condition: service_healthy`, `docker compose ps` reports health for all four services and dependents start only when Jenkins answers.
+Pattern / rule: give every service a healthcheck and let dependents wait on health. The stock controller image has `curl`; the agent image has neither `ps` nor `pgrep`, so its healthcheck scans `/proc/*/cmdline` for `agent.jar`.
+Promotion: CONVENTIONS.md

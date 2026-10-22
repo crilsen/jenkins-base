@@ -24,7 +24,10 @@ docker compose up -d
         |     toolchain + /home/jenkins/.aws (read-only) + workspace volume
         |
         +-- git  jenkins-base-git   http://git:8080/repo.git
-              repository built at startup from the mounted project files
+        |     repository built at startup from the mounted project files
+        |
+        +-- proxy  jenkins-base-proxy   https://localhost:8443 (Caddy, tls internal)
+              the only service a browser talks to
 ```
 
 Only the agent image is built. The controller is the official image pinned by digest and
@@ -41,6 +44,9 @@ editing a Jenkinsfile needs `docker compose restart git`, not a rebuild.
 | Agent entrypoint | `scripts/agent-entrypoint.sh` | Waits for the JNLP secret, connects over WebSocket, retries |
 | Secret hand-off | `init/02-publish-agent-secret.groovy` | Publishes the node secret to `data/agent-secret` |
 | Demo SCM | `scripts/seed-repo.sh` | Builds and serves the demo repository over HTTP |
+| TLS proxy | `proxy/Caddyfile` | Terminates TLS for the browser; Jenkins stays HTTP internally |
+| Repository checks | `scripts/check.sh` | One definition of the checks, run by CI and by the pipeline |
+| CI | `.github/workflows/check.yml` | Runs `scripts/check.sh` on push/PR |
 | Plugins | `plugins.txt` | Fully resolved, pinned plugin set installed by `jenkins-plugin-cli` |
 | Runtime | `docker-compose.yml` | Port mapping (loopback only), volumes, `TZ`, `restart: unless-stopped` |
 | Configuration as Code | `casc/jenkins.yaml` | Security realm, authorization, credentials |
@@ -97,9 +103,15 @@ Notes:
   inside a single `sh` step. Note: a secret-text credential exposes the token to anyone
   with job configure rights — acceptable for a demo, not a production pattern.
 - **Observed:** ports bind to `127.0.0.1`; the controller is not reachable from the LAN.
-- **Observed:** authorization is `loggedInUsersCanDoAnything`; anyone who logs in is admin.
-- **Inferred:** suitable only for a single-operator demo machine; the lenient
-  authorization and build-on-controller model are the main production gaps.
+- **Observed:** authorization is `globalMatrix`: `Overall/Administer` for `admin`, and
+  read-only (`Overall/Read`, `Job/Read`) for `viewer`. Verified: `viewer` gets 200 on
+  `/api/json` and 403 on CasC reload and on triggering a build. Anonymous access is off.
+- **Observed:** TLS terminates in the `proxy` service (Caddy with an internal CA);
+  `unclassified.location.url` is set to the https URL so Jenkins builds correct links.
+- **Observed:** every service has a Docker healthcheck; `docker compose ps` reports health
+  and dependents wait for `service_healthy`.
+- **Inferred:** the remaining production gaps are ephemeral agents, a real certificate
+  authority, and secrets coming from a secret manager instead of the CasC file.
 
 ## Environments and deployment
 

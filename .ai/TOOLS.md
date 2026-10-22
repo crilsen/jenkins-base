@@ -30,9 +30,9 @@ Authentication for AWS is the operator's `~/.aws`, mounted read-only into the co
 
 ## Current runtime (verified 2026-10-21)
 
-Three services: `jenkins-base` (stock image, 0 executors), `jenkins-base-agent` (built,
-2 executors, labels `terraform,linux,cloud`) and `jenkins-base-git` (serves
-`http://git:8080/repo.git`).
+Four services: `jenkins-base` (stock image, 0 executors), `jenkins-base-agent` (built, 2 executors, labels
+`terraform,linux,cloud`), `jenkins-base-git` (serves `http://git:8080/repo.git`) and `jenkins-base-proxy`
+(TLS on `https://localhost:8443`, the only browser entry point).
 
 State is a bind mount at `data/jenkins_home` (or `$JENKINS_HOME_DIR`), not a Docker volume,
 so `down -v` and `prune --volumes` cannot delete it. The Compose project name is pinned
