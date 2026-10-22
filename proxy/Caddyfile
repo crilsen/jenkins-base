@@ -1,11 +1,14 @@
 # Reverse proxy in front of the controller.
 #
-# `tls internal` makes Caddy issue a certificate from its own local CA for `localhost`,
-# so the traffic is real TLS without needing a domain or an ACME account. Trust the CA with
+# `tls internal` makes Caddy issue a certificate from its own local CA for `localhost`, so
+# the traffic is real TLS without needing a domain or an ACME account. Trust the CA with
 # `make ca` (it is written to data/caddy-root.crt) and the browser stops warning.
 #
-# Jenkins itself keeps running on plain HTTP inside the Compose network; only this service
-# is reachable from the host.
+# One site address: this checkout's own HTTPS port (JENKINS_HTTPS_PORT in
+# docker-compose.yml). There is deliberately no port 443 listener — the machine's standard
+# HTTPS port is left to whatever else owns it.
+# Jenkins itself keeps speaking plain HTTP inside the Compose network; only this service is
+# reachable from the host.
 
 {
 	# The admin API is not needed here and would be another exposed surface.
@@ -22,7 +25,8 @@ https://localhost:8443 {
 
 	reverse_proxy jenkins:8080 {
 		# Jenkins needs to know the original scheme to build correct absolute URLs.
+		# The Host header is passed through untouched on purpose: overriding it is how a
+		# proxy silently drops the port from the URLs an app generates.
 		header_up X-Forwarded-Proto https
-		header_up X-Forwarded-Host {host}
 	}
 }
