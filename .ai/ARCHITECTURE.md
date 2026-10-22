@@ -3,11 +3,10 @@
 ## Overview
 
 A single, cloud-agnostic Jenkins controller, built as a Docker image and run by Compose.
-It is the project's default local/on-prem baseline: the image carries Jenkins, Terraform,
-and the AWS CLI, while credentials and jobs come from CasC, so the same controller can run
-pipelines against AWS, Azure, GCP, or on-prem targets. Today it executes the
-`aws-waf-security` Terraform pipeline plus three per-cloud role examples. It is a local
-baseline: the controller builds on itself and there are no remote agents.
+It is a blueprint: the controller is the stock official image and the toolchain lives in
+the agent, while credentials and jobs come from CasC, so the same setup can run pipelines
+against AWS, Azure, GCP, or on-prem targets. It ships example jobs; the operator's real
+pipelines live in their private checkout, kept in sync with this one by `make sync-check`.
 
 ```text
 docker compose up -d
@@ -83,9 +82,9 @@ Notes:
 
 ## Identity, secrets, and access
 
-- **Observed:** no AWS access keys stored in Jenkins. The operator's `~/.aws` is mounted
-  read-only into `JENKINS_HOME`, and the pipeline assumes the deployment role through
-  STS (credential `waf-deploy-role-arn` holds the ARN string).
+- **Observed:** no AWS access keys are stored in Jenkins. `~/.aws` is mounted read-only
+  **into the agent**, and the AWS example assumes a role through STS using the
+  `aws-demo-role-arn` credential (an ARN string, not keys).
 - **Observed (offline SCM):** the example jobs clone `/opt/demo/repo.git`, a snapshot of
   this project's Jenkinsfiles baked into the image with branches `main` and `feature/demo`.
   Cloning a local path needs `-Dhudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true`, which
@@ -125,8 +124,7 @@ Notes:
 
 ## External dependencies
 
-- `github.com/crilsen/aws-waf-security` — the pipeline source, parameters, and
-  IAM requirements (`docs/iam/`).
+- The agent base image and the toolchains it pins (see `Dockerfile.agent`).
 - Public downloads at image build: `awscli.amazonaws.com` and
   `releases.hashicorp.com` (Terraform archive is pinned by version).
 - AWS account: the deployment role must pre-exist and be assumable by the local identity.

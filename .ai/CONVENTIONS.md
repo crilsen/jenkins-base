@@ -79,8 +79,10 @@
 - `casc/jenkins.yaml` is the live file and is git-ignored; `casc/jenkins.yaml.example` is
   the committed template. Never commit the real file, and never put a real password,
   account id, or ARN in the example — use placeholders like `<ACCOUNT_ID>`.
-- Resources are named after their purpose (`waf-deploy-role-arn`, `terraform` label,
-  `aws-waf-security` job) and job IDs mirror the git remote (`aws-waf-security-git`).
+- Example jobs are prefixed `example-` and their resources are named after their purpose
+  (`aws-demo-role-arn`, the `terraform` label, `example-aws-role`); job IDs mirror the git
+  remote (`example-multibranch-git`). The operator's real pipelines follow the same
+  conventions in their private checkout.
 - **Split by top-level key:** `jenkins.yaml` owns `jenkins:` and `credentials:`;
   `jobs.yaml` owns `jobs:`. CasC files are supplementary and raise a conflict if two
   files define the same key, so never add a second `jobs:` or `credentials:` block.

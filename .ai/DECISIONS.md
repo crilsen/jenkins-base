@@ -96,7 +96,7 @@ Type: ADR | Status: Accepted (observed) | Date: unknown | Owners: repository aut
 **Context:** the pipeline deploys with Terraform into a real AWS account.
 
 **Decision:** the operator's `~/.aws` is mounted read-only at `JENKINS_HOME/.aws`; the only
-Jenkins credential is the string `waf-deploy-role-arn`, holding the deployment role ARN. The
+Jenkins credential is the string `aws-demo-role-arn`, holding a role ARN. The example
 pipeline assumes that role through STS and uses the temporary credentials.
 
 **Reasoning:** no long-lived keys are stored in Jenkins, and the blast radius is limited to
@@ -186,8 +186,8 @@ for multicloud (AWS/Azure/GCP) and on-prem/local pipelines — not a single-proj
 **Decision:** name it `jenkins-base` (image `jenkins-base:1.0`, container `jenkins-base`),
 and pin `name: jenkins-base` at the top of `docker-compose.yml` so the Compose project — and
 therefore the `jenkins-base_jenkins_home` volume — no longer depends on the checkout
-directory. The scope (multicloud + on-prem, currently wired to `aws-waf-security`) is
-documented in `README.md` and `.ai/PROJECT.md` instead of encoded in the name.
+directory. The scope (multicloud + on-prem, shipped as example jobs) is documented in
+`README.md` and `.ai/PROJECT.md` instead of encoded in the name.
 
 **Reasoning:** the name must survive the repository being copied per project. A
 scope-neutral base name plus an explicit scope statement stays accurate as more pipelines

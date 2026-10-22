@@ -52,13 +52,6 @@ credentials:
   system:
     domainCredentials:
       - credentials:
-          # Used by the aws-waf-security pipeline (Validate -> Plan -> Apply).
-          - string:
-              scope: GLOBAL
-              id: "waf-deploy-role-arn"
-              secret: "arn:aws:iam::<ACCOUNT_ID>:role/waf-deploy"
-              description: "Role assumed by the pipeline through STS (no static keys in the job)"
-
           # Used by example-aws-role.
           - string:
               scope: GLOBAL

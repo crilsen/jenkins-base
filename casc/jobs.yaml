@@ -25,27 +25,6 @@ jobs:
         return file.text
       }
 
-      // The original job: Validate -> Plan -> Approval -> Apply for the WAFv2
-      // project, driven by the Jenkinsfile in the target repository.
-      multibranchPipelineJob('aws-waf-security') {
-        description('Validate -> Plan -> Approval -> Apply for the WAFv2 project')
-        branchSources {
-          git {
-            id('aws-waf-security-git')
-            remote('https://github.com/crilsen/aws-waf-security.git')
-            includes('main')
-          }
-        }
-        factory {
-          workflowBranchProjectFactory {
-            scriptPath('Jenkinsfile')
-          }
-        }
-        orphanedItemStrategy {
-          discardOldItems { numToKeep(10) }
-        }
-      }
-
       // ---------------------------------------------------------------------
       // Example jobs: one per cloud, each showing role assumption through
       // short-lived federation instead of static credentials.

@@ -95,9 +95,8 @@ docker compose exec jenkins aws --version
 docker compose exec jenkins sh -c 'curl -s -u admin:<pass> http://localhost:8080/api/json?tree=jobs[name]'
 ```
 
-Confirm via the API that `aws-waf-security`, `example-aws-role`, `example-azure-role`, and
-`example-gcp-role` all exist, which proves CasC loaded both files and job-dsl resolved the
-pipeline bodies. Then `docker compose down` (keep the volume unless the test was meant to
+Confirm via the API that the `example-*` jobs exist, which proves CasC loaded both files and
+job-dsl resolved the pipeline bodies. Then `docker compose down` (keep the volume unless the test was meant to
 reset state).
 
 ### 4. Agent health
@@ -123,7 +122,7 @@ mounted `~/.aws` identity to be allowed to assume the role.
 
 Triggering `Plan`/`Apply` against a real AWS account is an external, potentially costly
 operation. Do not run it as part of validation without explicit user approval. It also
-needs the `aws-waf-security` repository to be reachable and the deployment role to exist.
+needs the example jobs' credentials to be filled in and reachable.
 
 ## Current status
 

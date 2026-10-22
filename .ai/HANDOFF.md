@@ -12,6 +12,9 @@
 - Exact next action: none pending; pick work from `.ai/TASKS.md`.
 - Sync rule: the portfolio and the lab hold the same implementation; every improvement
   lands in both, and `make sync-check` fails on drift against the sibling checkout.
+- Identity: this checkout is `jenkins-base` (folder, GitHub repo and Compose project share the
+  name). The sibling checkout holds the same implementation and is compared by
+  `make sync-check`.
 - Blocked by: `None.`
 - Resume prompt: `Read AGENTS.md and .ai/HANDOFF.md. Continue from the Resume block. Do not rediscover context.`
 

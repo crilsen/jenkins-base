@@ -152,7 +152,6 @@ Per-cloud derived agents (`FROM jenkins-base-agent:1.0`) are the escape hatch.
 
 | Job | What it shows |
 | --- | --- |
-| `aws-waf-security` | Multibranch job for the `aws-waf-security` Terraform pipeline |
 | `example-aws-role` | `sts:AssumeRole` → `get-caller-identity`, no static keys |
 | `example-azure-role` | Entra ID federated credential: OIDC token → ARM token |
 | `example-gcp-role` | Workload Identity Federation → service account impersonation |

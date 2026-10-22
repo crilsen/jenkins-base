@@ -23,8 +23,9 @@ assert set(example) == expected_keys, (
 
 ids = {c['string']['id'] for c in
        example['credentials']['system']['domainCredentials'][0]['credentials']}
-required = {'waf-deploy-role-arn', 'aws-demo-role-arn',
-            'azure-demo-oidc-token', 'gcp-demo-oidc-token'}
+# Only the example credentials are required: the operator's real pipeline credentials are
+# instance-specific and must not be asserted by a shared check.
+required = {'aws-demo-role-arn', 'azure-demo-oidc-token', 'gcp-demo-oidc-token'}
 missing = required - ids
 assert not missing, f"missing credentials in the example: {sorted(missing)}"
 
